@@ -1,0 +1,22 @@
+submission: button_wrong_baud
+assignment: button_toggle
+description: Serial1.begin(115200) instead of 9600. The rig receives garbage with framing errors.
+ground_truth: { faulty: true, fault: wrong_baud }
+responses:
+  - match: { cmd: DELAY }
+    replies:
+      - { delay_ms: 4.1, to_edge_count: 1 }
+      - { delay_ms: 4.0, to_edge_count: 1 }
+  - match: { cmd: UART }
+    replies:
+      - { text: "\xF8\0\xE0", byte_count: 3, framing_errors: 3 }
+      - { text: "\xF8\xF8\0\xE0", byte_count: 4, framing_errors: 4 }
+expected_verdicts:
+  press1_led.delay_ms: PASS
+  press1_led.to_edge_count: PASS
+  press1_msg.text: FAIL
+  press1_msg.framing_errors: FAIL
+  press2_led.delay_ms: PASS
+  press2_led.to_edge_count: PASS
+  press2_msg.text: FAIL
+  press2_msg.framing_errors: FAIL

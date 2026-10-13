@@ -1,0 +1,12 @@
+submission: pwm_borderline
+assignment: pwm_1khz
+description: >
+  Frequency 1019.8 Hz is inside the ±2% band (980–1020 Hz), but within the rig's
+  measurement error (0.05% ≈ 0.51 Hz) of the edge, so the grader cannot be sure.
+ground_truth: { faulty: false }
+responses:
+  - match: { cmd: FREQ, pin: D5 }
+    reply: { frequency_hz: 1019.8, duty_pct: 25.0, edge_count: 102 }
+expected_verdicts:
+  pwm.frequency_hz: BORDERLINE
+  pwm.duty_pct: PASS

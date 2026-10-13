@@ -1,0 +1,66 @@
+{
+  "schema_version": "0.1",
+  "assignment": "button_toggle",
+  "description": "A bouncy active-low button on D2 toggles the LED on D13 within 20 ms and prints ON/OFF on Serial1 at 9600 baud; bounce must be ignored.",
+  "setup": { "reset": true, "boot_wait_ms": 500 },
+  "steps": [
+    { "op": "drive", "id": "idle", "pin": "D2", "action": "release" },
+    { "op": "wait", "ms": 100 },
+
+    {
+      "op": "measure", "id": "press1_led", "concurrent_with_next": true,
+      "requirement": "First press turns the LED on within 20 ms, exactly once despite bounce",
+      "primitive": "edge_delay",
+      "from_pin": "D2", "from_edge": "falling", "to_pin": "D13", "to_edge": "any", "timeout_ms": 100,
+      "expect": [
+        { "field": "delay_ms", "op": "le", "value": 20 },
+        { "field": "to_edge_count", "op": "eq", "value": 1 }
+      ]
+    },
+    {
+      "op": "measure", "id": "press1_msg", "concurrent_with_next": true,
+      "requirement": "First press prints ON on Serial1 at 9600 baud",
+      "primitive": "uart_read", "baud": 9600, "window_ms": 200,
+      "expect": [
+        { "field": "text", "op": "matches", "value": "^\\s*ON\\s*$" },
+        { "field": "framing_errors", "op": "eq", "value": 0 }
+      ]
+    },
+    { "op": "drive", "id": "press1", "pin": "D2", "action": "bounce", "count": 5, "interval_us": 200, "final_level": "low" },
+    { "op": "wait", "ms": 100 },
+    { "op": "drive", "id": "release1", "pin": "D2", "action": "release" },
+    { "op": "wait", "ms": 200 },
+
+    {
+      "op": "measure", "id": "press2_led", "concurrent_with_next": true,
+      "requirement": "Second press turns the LED off within 20 ms, exactly once despite bounce",
+      "primitive": "edge_delay",
+      "from_pin": "D2", "from_edge": "falling", "to_pin": "D13", "to_edge": "any", "timeout_ms": 100,
+      "expect": [
+        { "field": "delay_ms", "op": "le", "value": 20 },
+        { "field": "to_edge_count", "op": "eq", "value": 1 }
+      ]
+    },
+    {
+      "op": "measure", "id": "press2_msg", "concurrent_with_next": true,
+      "requirement": "Second press prints OFF on Serial1 at 9600 baud",
+      "primitive": "uart_read", "baud": 9600, "window_ms": 200,
+      "expect": [
+        { "field": "text", "op": "matches", "value": "^\\s*OFF\\s*$" },
+        { "field": "framing_errors", "op": "eq", "value": 0 }
+      ]
+    },
+    { "op": "drive", "id": "press2", "pin": "D2", "action": "bounce", "count": 5, "interval_us": 200, "final_level": "low" },
+    { "op": "wait", "ms": 100 },
+    { "op": "drive", "id": "release2", "pin": "D2", "action": "release" }
+  ],
+  "not_graded": [
+    { "requirement": "Debounce is implemented in software (not with delay())", "reason": "Only the observable behaviour (one LED edge per press) is graded" },
+    { "requirement": "Code is commented and readable", "reason": "Not observable electrically" }
+  ],
+  "assumptions": [
+    "The student enables the internal pull-up on D2 (INPUT_PULLUP), so the rig releases D2 (high-Z) when the button is not pressed",
+    "The LED starts off after reset, so the first press prints ON",
+    "Each message is a single line; trailing CR/LF is ignored"
+  ]
+}

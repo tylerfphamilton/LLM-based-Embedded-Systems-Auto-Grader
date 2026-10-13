@@ -1,0 +1,23 @@
+submission: button_correct
+assignment: button_toggle
+description: Reference solution. Debounced, LED toggles in about 4 ms, prints ON then OFF at 9600 baud.
+ground_truth: { faulty: false }
+noise: { seed: 42, fields: { delay_ms: { abs: 0.05 } } }
+responses:
+  - match: { cmd: DELAY, from_pin: D2, to_pin: D13 }
+    replies:                       # consumed in order: press 1, press 2
+      - { delay_ms: 4.2, to_edge_count: 1 }
+      - { delay_ms: 3.9, to_edge_count: 1 }
+  - match: { cmd: UART, baud: 9600 }
+    replies:
+      - { text: "ON\r\n", byte_count: 4, framing_errors: 0 }
+      - { text: "OFF\r\n", byte_count: 5, framing_errors: 0 }
+expected_verdicts:
+  press1_led.delay_ms: PASS
+  press1_led.to_edge_count: PASS
+  press1_msg.text: PASS
+  press1_msg.framing_errors: PASS
+  press2_led.delay_ms: PASS
+  press2_led.to_edge_count: PASS
+  press2_msg.text: PASS
+  press2_msg.framing_errors: PASS

@@ -1,0 +1,9 @@
+submission: blink_too_fast
+assignment: blink_2hz
+description: delay(125) instead of delay(250), so the LED blinks at 4 Hz.
+ground_truth: { faulty: true, fault: too_fast }
+responses:
+  - match: { cmd: TRACE, pin: D13 }
+    reply: { edge_count: 16, final_level: 1, edges_ms: [] }
+expected_verdicts:
+  blink.edge_count: FAIL

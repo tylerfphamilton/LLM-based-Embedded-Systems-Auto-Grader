@@ -1,0 +1,22 @@
+submission: button_rig_stimulus_fault
+assignment: button_toggle
+description: >
+  The rig cannot drive the bounce on D2 (ERR BUSY). Measurements armed around a failed
+  stimulus mean nothing, so every concurrent check is ERROR (rig fault), never FAIL.
+ground_truth: { faulty: false }
+debug_lines: true                  # also exercises '#' debug-line handling
+fail_command: { cmd: DRIVE, match: { count: 5 }, error: "ERR BUSY D2 driver in use" }
+responses:
+  - match: { cmd: DELAY }
+    reply: { delay_ms: null, to_edge_count: 0 }
+  - match: { cmd: UART }
+    reply: { text: "", byte_count: 0, framing_errors: 0 }
+expected_verdicts:
+  press1_led.delay_ms: ERROR
+  press1_led.to_edge_count: ERROR
+  press1_msg.text: ERROR
+  press1_msg.framing_errors: ERROR
+  press2_led.delay_ms: ERROR
+  press2_led.to_edge_count: ERROR
+  press2_msg.text: ERROR
+  press2_msg.framing_errors: ERROR

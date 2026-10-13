@@ -1,0 +1,21 @@
+{
+  "schema_version": "0.1",
+  "assignment": "blink_2hz",
+  "description": "Blink the on-board LED (D13) at 2 Hz: 250 ms on, 250 ms off.",
+  "setup": { "reset": true, "boot_wait_ms": 500 },
+  "steps": [
+    {
+      "op": "measure",
+      "id": "blink",
+      "requirement": "LED on D13 toggles every 250 ms (8 edges in 2 s)",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 2000,
+      "expect": [
+        { "field": "edge_count", "op": "in_range", "low": 7, "high": 9 }
+      ]
+    }
+  ],
+  "not_graded": [],
+  "assumptions": ["±1 edge allowed because the 2 s window starts at an arbitrary phase"]
+}

@@ -1,0 +1,8 @@
+submission: pwm_rig_timeout
+assignment: pwm_1khz
+description: The measuring board times out on FREQ. This is a rig fault, so the checks are ERROR, not FAIL.
+ground_truth: { faulty: false }
+fail_command: { cmd: FREQ, error: "ERR TIMEOUT capture timer did not start" }
+expected_verdicts:
+  pwm.frequency_hz: ERROR
+  pwm.duty_pct: ERROR

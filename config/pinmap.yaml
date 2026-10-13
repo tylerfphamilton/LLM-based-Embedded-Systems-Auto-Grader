@@ -1,0 +1,13 @@
+# Student board (Arduino Nano 33 BLE Sense) pin name -> measuring board (Nucleo-L476RG) pin.
+# Capabilities are from the MEASURING board's point of view (uart_rx = STM32 receives).
+#
+# !!! Every stm32 value is a PLACEHOLDER until verified in STM32CubeMX against the wiring. !!!
+pins:
+  D5:  { stm32: PA0,  caps: [gpio, timer_capture] }   # placeholder, verify in CubeMX (TIM2_CH1?)
+  D2:  { stm32: TBD,  caps: [gpio, drive] }           # placeholder, button input on the student side
+  D13: { stm32: TBD,  caps: [gpio, timer_capture] }   # placeholder, on-board LED on the Nano
+  D1:  { stm32: PA10, caps: [uart_rx] }               # Nano Serial1 TX -> STM32 USART1 RX (placeholder)
+  D0:  { stm32: PA9,  caps: [uart_tx] }               # Nano Serial1 RX <- STM32 USART1 TX (placeholder)
+  A0:  { stm32: TBD,  caps: [analog_in, dac] }        # placeholder; L476 DAC1_OUT1 is PA4
+  A4:  { stm32: TBD,  caps: [i2c_sda] }               # placeholder, STM32 acts as I2C target
+  A5:  { stm32: TBD,  caps: [i2c_scl] }               # placeholder

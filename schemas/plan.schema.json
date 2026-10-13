@@ -1,0 +1,1278 @@
+{
+  "$defs": {
+    "AnalogReadStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "measure",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "requirement": {
+          "title": "Requirement",
+          "type": "string"
+        },
+        "expect": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "approx": "#/$defs/ApproxExpectation",
+                "contains": "#/$defs/TextExpectation",
+                "eq": "#/$defs/CompareExpectation",
+                "ge": "#/$defs/CompareExpectation",
+                "gt": "#/$defs/CompareExpectation",
+                "in_range": "#/$defs/RangeExpectation",
+                "is_null": "#/$defs/NullExpectation",
+                "le": "#/$defs/CompareExpectation",
+                "lt": "#/$defs/CompareExpectation",
+                "matches": "#/$defs/TextExpectation",
+                "ne": "#/$defs/CompareExpectation",
+                "not_null": "#/$defs/NullExpectation"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ApproxExpectation"
+              },
+              {
+                "$ref": "#/$defs/CompareExpectation"
+              },
+              {
+                "$ref": "#/$defs/RangeExpectation"
+              },
+              {
+                "$ref": "#/$defs/TextExpectation"
+              },
+              {
+                "$ref": "#/$defs/NullExpectation"
+              }
+            ]
+          },
+          "title": "Expect",
+          "type": "array"
+        },
+        "concurrent_with_next": {
+          "default": false,
+          "description": "Arm this measurement, run the next step(s) as stimulus, then collect.",
+          "title": "Concurrent With Next",
+          "type": "boolean"
+        },
+        "primitive": {
+          "const": "analog_read",
+          "title": "Primitive",
+          "type": "string"
+        },
+        "pin": {
+          "title": "Pin",
+          "type": "string"
+        },
+        "samples": {
+          "title": "Samples",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "requirement",
+        "expect",
+        "primitive",
+        "pin",
+        "samples"
+      ],
+      "title": "AnalogReadStep",
+      "type": "object"
+    },
+    "ApproxExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "approx",
+          "title": "Op",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        },
+        "tol_abs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tol Abs"
+        },
+        "tol_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tol Pct"
+        }
+      },
+      "required": [
+        "op",
+        "field",
+        "value"
+      ],
+      "title": "ApproxExpectation",
+      "type": "object"
+    },
+    "CompareExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "eq",
+            "ne",
+            "le",
+            "ge",
+            "lt",
+            "gt"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "op",
+        "field",
+        "value"
+      ],
+      "title": "CompareExpectation",
+      "type": "object"
+    },
+    "DacSetStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "dac_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "pin": {
+          "title": "Pin",
+          "type": "string"
+        },
+        "mv": {
+          "title": "Mv",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "pin",
+        "mv"
+      ],
+      "title": "DacSetStep",
+      "type": "object"
+    },
+    "DriveBounceStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "drive",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "pin": {
+          "title": "Pin",
+          "type": "string"
+        },
+        "action": {
+          "const": "bounce",
+          "title": "Action",
+          "type": "string"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "interval_us": {
+          "title": "Interval Us",
+          "type": "integer"
+        },
+        "final_level": {
+          "enum": [
+            "high",
+            "low"
+          ],
+          "title": "Final Level",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "pin",
+        "action",
+        "count",
+        "interval_us",
+        "final_level"
+      ],
+      "title": "DriveBounceStep",
+      "type": "object"
+    },
+    "DriveLevelStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "drive",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "pin": {
+          "title": "Pin",
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "high",
+            "low",
+            "release"
+          ],
+          "title": "Action",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "pin",
+        "action"
+      ],
+      "title": "DriveLevelStep",
+      "type": "object"
+    },
+    "DrivePulseStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "drive",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "pin": {
+          "title": "Pin",
+          "type": "string"
+        },
+        "action": {
+          "const": "pulse",
+          "title": "Action",
+          "type": "string"
+        },
+        "width_ms": {
+          "title": "Width Ms",
+          "type": "integer"
+        },
+        "level": {
+          "enum": [
+            "high",
+            "low"
+          ],
+          "title": "Level",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "pin",
+        "action",
+        "width_ms",
+        "level"
+      ],
+      "title": "DrivePulseStep",
+      "type": "object"
+    },
+    "EdgeDelayStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "measure",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "requirement": {
+          "title": "Requirement",
+          "type": "string"
+        },
+        "expect": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "approx": "#/$defs/ApproxExpectation",
+                "contains": "#/$defs/TextExpectation",
+                "eq": "#/$defs/CompareExpectation",
+                "ge": "#/$defs/CompareExpectation",
+                "gt": "#/$defs/CompareExpectation",
+                "in_range": "#/$defs/RangeExpectation",
+                "is_null": "#/$defs/NullExpectation",
+                "le": "#/$defs/CompareExpectation",
+                "lt": "#/$defs/CompareExpectation",
+                "matches": "#/$defs/TextExpectation",
+                "ne": "#/$defs/CompareExpectation",
+                "not_null": "#/$defs/NullExpectation"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ApproxExpectation"
+              },
+              {
+                "$ref": "#/$defs/CompareExpectation"
+              },
+              {
+                "$ref": "#/$defs/RangeExpectation"
+              },
+              {
+                "$ref": "#/$defs/TextExpectation"
+              },
+              {
+                "$ref": "#/$defs/NullExpectation"
+              }
+            ]
+          },
+          "title": "Expect",
+          "type": "array"
+        },
+        "concurrent_with_next": {
+          "default": false,
+          "description": "Arm this measurement, run the next step(s) as stimulus, then collect.",
+          "title": "Concurrent With Next",
+          "type": "boolean"
+        },
+        "primitive": {
+          "const": "edge_delay",
+          "title": "Primitive",
+          "type": "string"
+        },
+        "from_pin": {
+          "title": "From Pin",
+          "type": "string"
+        },
+        "from_edge": {
+          "enum": [
+            "rising",
+            "falling",
+            "any"
+          ],
+          "title": "From Edge",
+          "type": "string"
+        },
+        "to_pin": {
+          "title": "To Pin",
+          "type": "string"
+        },
+        "to_edge": {
+          "enum": [
+            "rising",
+            "falling",
+            "any"
+          ],
+          "title": "To Edge",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "requirement",
+        "expect",
+        "primitive",
+        "from_pin",
+        "from_edge",
+        "to_pin",
+        "to_edge",
+        "timeout_ms"
+      ],
+      "title": "EdgeDelayStep",
+      "type": "object"
+    },
+    "FreqDutyStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "measure",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "requirement": {
+          "title": "Requirement",
+          "type": "string"
+        },
+        "expect": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "approx": "#/$defs/ApproxExpectation",
+                "contains": "#/$defs/TextExpectation",
+                "eq": "#/$defs/CompareExpectation",
+                "ge": "#/$defs/CompareExpectation",
+                "gt": "#/$defs/CompareExpectation",
+                "in_range": "#/$defs/RangeExpectation",
+                "is_null": "#/$defs/NullExpectation",
+                "le": "#/$defs/CompareExpectation",
+                "lt": "#/$defs/CompareExpectation",
+                "matches": "#/$defs/TextExpectation",
+                "ne": "#/$defs/CompareExpectation",
+                "not_null": "#/$defs/NullExpectation"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ApproxExpectation"
+              },
+              {
+                "$ref": "#/$defs/CompareExpectation"
+              },
+              {
+                "$ref": "#/$defs/RangeExpectation"
+              },
+              {
+                "$ref": "#/$defs/TextExpectation"
+              },
+              {
+                "$ref": "#/$defs/NullExpectation"
+              }
+            ]
+          },
+          "title": "Expect",
+          "type": "array"
+        },
+        "concurrent_with_next": {
+          "default": false,
+          "description": "Arm this measurement, run the next step(s) as stimulus, then collect.",
+          "title": "Concurrent With Next",
+          "type": "boolean"
+        },
+        "primitive": {
+          "const": "freq_duty",
+          "title": "Primitive",
+          "type": "string"
+        },
+        "pin": {
+          "title": "Pin",
+          "type": "string"
+        },
+        "window_ms": {
+          "title": "Window Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "requirement",
+        "expect",
+        "primitive",
+        "pin",
+        "window_ms"
+      ],
+      "title": "FreqDutyStep",
+      "type": "object"
+    },
+    "I2cEmuStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "i2c_emu",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "addr": {
+          "title": "Addr",
+          "type": "integer"
+        },
+        "registers": {
+          "patternProperties": {
+            "^(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})$": {
+              "type": "integer"
+            }
+          },
+          "title": "Registers",
+          "type": "object"
+        }
+      },
+      "required": [
+        "op",
+        "addr",
+        "registers"
+      ],
+      "title": "I2cEmuStep",
+      "type": "object"
+    },
+    "I2cLogStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "measure",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "requirement": {
+          "title": "Requirement",
+          "type": "string"
+        },
+        "expect": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "approx": "#/$defs/ApproxExpectation",
+                "contains": "#/$defs/TextExpectation",
+                "eq": "#/$defs/CompareExpectation",
+                "ge": "#/$defs/CompareExpectation",
+                "gt": "#/$defs/CompareExpectation",
+                "in_range": "#/$defs/RangeExpectation",
+                "is_null": "#/$defs/NullExpectation",
+                "le": "#/$defs/CompareExpectation",
+                "lt": "#/$defs/CompareExpectation",
+                "matches": "#/$defs/TextExpectation",
+                "ne": "#/$defs/CompareExpectation",
+                "not_null": "#/$defs/NullExpectation"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ApproxExpectation"
+              },
+              {
+                "$ref": "#/$defs/CompareExpectation"
+              },
+              {
+                "$ref": "#/$defs/RangeExpectation"
+              },
+              {
+                "$ref": "#/$defs/TextExpectation"
+              },
+              {
+                "$ref": "#/$defs/NullExpectation"
+              }
+            ]
+          },
+          "title": "Expect",
+          "type": "array"
+        },
+        "concurrent_with_next": {
+          "default": false,
+          "description": "Arm this measurement, run the next step(s) as stimulus, then collect.",
+          "title": "Concurrent With Next",
+          "type": "boolean"
+        },
+        "primitive": {
+          "const": "i2c_log",
+          "title": "Primitive",
+          "type": "string"
+        },
+        "window_ms": {
+          "title": "Window Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "requirement",
+        "expect",
+        "primitive",
+        "window_ms"
+      ],
+      "title": "I2cLogStep",
+      "type": "object"
+    },
+    "LogicTraceStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "measure",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "requirement": {
+          "title": "Requirement",
+          "type": "string"
+        },
+        "expect": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "approx": "#/$defs/ApproxExpectation",
+                "contains": "#/$defs/TextExpectation",
+                "eq": "#/$defs/CompareExpectation",
+                "ge": "#/$defs/CompareExpectation",
+                "gt": "#/$defs/CompareExpectation",
+                "in_range": "#/$defs/RangeExpectation",
+                "is_null": "#/$defs/NullExpectation",
+                "le": "#/$defs/CompareExpectation",
+                "lt": "#/$defs/CompareExpectation",
+                "matches": "#/$defs/TextExpectation",
+                "ne": "#/$defs/CompareExpectation",
+                "not_null": "#/$defs/NullExpectation"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ApproxExpectation"
+              },
+              {
+                "$ref": "#/$defs/CompareExpectation"
+              },
+              {
+                "$ref": "#/$defs/RangeExpectation"
+              },
+              {
+                "$ref": "#/$defs/TextExpectation"
+              },
+              {
+                "$ref": "#/$defs/NullExpectation"
+              }
+            ]
+          },
+          "title": "Expect",
+          "type": "array"
+        },
+        "concurrent_with_next": {
+          "default": false,
+          "description": "Arm this measurement, run the next step(s) as stimulus, then collect.",
+          "title": "Concurrent With Next",
+          "type": "boolean"
+        },
+        "primitive": {
+          "const": "logic_trace",
+          "title": "Primitive",
+          "type": "string"
+        },
+        "pin": {
+          "title": "Pin",
+          "type": "string"
+        },
+        "window_ms": {
+          "title": "Window Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "requirement",
+        "expect",
+        "primitive",
+        "pin",
+        "window_ms"
+      ],
+      "title": "LogicTraceStep",
+      "type": "object"
+    },
+    "NotGraded": {
+      "additionalProperties": false,
+      "properties": {
+        "requirement": {
+          "title": "Requirement",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requirement",
+        "reason"
+      ],
+      "title": "NotGraded",
+      "type": "object"
+    },
+    "NullExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "is_null",
+            "not_null"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "field"
+      ],
+      "title": "NullExpectation",
+      "type": "object"
+    },
+    "RangeExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "in_range",
+          "title": "Op",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "low": {
+          "title": "Low",
+          "type": "number"
+        },
+        "high": {
+          "title": "High",
+          "type": "number"
+        }
+      },
+      "required": [
+        "op",
+        "field",
+        "low",
+        "high"
+      ],
+      "title": "RangeExpectation",
+      "type": "object"
+    },
+    "Setup": {
+      "additionalProperties": false,
+      "properties": {
+        "reset": {
+          "default": true,
+          "title": "Reset",
+          "type": "boolean"
+        },
+        "boot_wait_ms": {
+          "default": 500,
+          "title": "Boot Wait Ms",
+          "type": "integer"
+        }
+      },
+      "title": "Setup",
+      "type": "object"
+    },
+    "TextExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "contains",
+            "matches"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "field",
+        "value"
+      ],
+      "title": "TextExpectation",
+      "type": "object"
+    },
+    "UartReadStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "measure",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "requirement": {
+          "title": "Requirement",
+          "type": "string"
+        },
+        "expect": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "approx": "#/$defs/ApproxExpectation",
+                "contains": "#/$defs/TextExpectation",
+                "eq": "#/$defs/CompareExpectation",
+                "ge": "#/$defs/CompareExpectation",
+                "gt": "#/$defs/CompareExpectation",
+                "in_range": "#/$defs/RangeExpectation",
+                "is_null": "#/$defs/NullExpectation",
+                "le": "#/$defs/CompareExpectation",
+                "lt": "#/$defs/CompareExpectation",
+                "matches": "#/$defs/TextExpectation",
+                "ne": "#/$defs/CompareExpectation",
+                "not_null": "#/$defs/NullExpectation"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ApproxExpectation"
+              },
+              {
+                "$ref": "#/$defs/CompareExpectation"
+              },
+              {
+                "$ref": "#/$defs/RangeExpectation"
+              },
+              {
+                "$ref": "#/$defs/TextExpectation"
+              },
+              {
+                "$ref": "#/$defs/NullExpectation"
+              }
+            ]
+          },
+          "title": "Expect",
+          "type": "array"
+        },
+        "concurrent_with_next": {
+          "default": false,
+          "description": "Arm this measurement, run the next step(s) as stimulus, then collect.",
+          "title": "Concurrent With Next",
+          "type": "boolean"
+        },
+        "primitive": {
+          "const": "uart_read",
+          "title": "Primitive",
+          "type": "string"
+        },
+        "baud": {
+          "title": "Baud",
+          "type": "integer"
+        },
+        "window_ms": {
+          "title": "Window Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "requirement",
+        "expect",
+        "primitive",
+        "baud",
+        "window_ms"
+      ],
+      "title": "UartReadStep",
+      "type": "object"
+    },
+    "UartSendStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "uart_send",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "baud": {
+          "title": "Baud",
+          "type": "integer"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data"
+        },
+        "hex": {
+          "anyOf": [
+            {
+              "pattern": "^([0-9A-Fa-f]{2})+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hex"
+        }
+      },
+      "required": [
+        "op",
+        "baud"
+      ],
+      "title": "UartSendStep",
+      "type": "object"
+    },
+    "WaitStep": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "wait",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_\\-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "ms": {
+          "title": "Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "ms"
+      ],
+      "title": "WaitStep",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A complete test plan for one assignment.",
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "assignment": {
+      "pattern": "^[a-z0-9_]+$",
+      "title": "Assignment",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "setup": {
+      "$ref": "#/$defs/Setup"
+    },
+    "steps": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "dac_set": "#/$defs/DacSetStep",
+            "drive": {
+              "discriminator": {
+                "mapping": {
+                  "bounce": "#/$defs/DriveBounceStep",
+                  "high": "#/$defs/DriveLevelStep",
+                  "low": "#/$defs/DriveLevelStep",
+                  "pulse": "#/$defs/DrivePulseStep",
+                  "release": "#/$defs/DriveLevelStep"
+                },
+                "propertyName": "action"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/DriveLevelStep"
+                },
+                {
+                  "$ref": "#/$defs/DrivePulseStep"
+                },
+                {
+                  "$ref": "#/$defs/DriveBounceStep"
+                }
+              ]
+            },
+            "i2c_emu": "#/$defs/I2cEmuStep",
+            "measure": {
+              "discriminator": {
+                "mapping": {
+                  "analog_read": "#/$defs/AnalogReadStep",
+                  "edge_delay": "#/$defs/EdgeDelayStep",
+                  "freq_duty": "#/$defs/FreqDutyStep",
+                  "i2c_log": "#/$defs/I2cLogStep",
+                  "logic_trace": "#/$defs/LogicTraceStep",
+                  "uart_read": "#/$defs/UartReadStep"
+                },
+                "propertyName": "primitive"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/FreqDutyStep"
+                },
+                {
+                  "$ref": "#/$defs/EdgeDelayStep"
+                },
+                {
+                  "$ref": "#/$defs/LogicTraceStep"
+                },
+                {
+                  "$ref": "#/$defs/UartReadStep"
+                },
+                {
+                  "$ref": "#/$defs/I2cLogStep"
+                },
+                {
+                  "$ref": "#/$defs/AnalogReadStep"
+                }
+              ]
+            },
+            "uart_send": "#/$defs/UartSendStep",
+            "wait": "#/$defs/WaitStep"
+          },
+          "propertyName": "op"
+        },
+        "oneOf": [
+          {
+            "discriminator": {
+              "mapping": {
+                "bounce": "#/$defs/DriveBounceStep",
+                "high": "#/$defs/DriveLevelStep",
+                "low": "#/$defs/DriveLevelStep",
+                "pulse": "#/$defs/DrivePulseStep",
+                "release": "#/$defs/DriveLevelStep"
+              },
+              "propertyName": "action"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DriveLevelStep"
+              },
+              {
+                "$ref": "#/$defs/DrivePulseStep"
+              },
+              {
+                "$ref": "#/$defs/DriveBounceStep"
+              }
+            ]
+          },
+          {
+            "$ref": "#/$defs/WaitStep"
+          },
+          {
+            "$ref": "#/$defs/UartSendStep"
+          },
+          {
+            "$ref": "#/$defs/DacSetStep"
+          },
+          {
+            "$ref": "#/$defs/I2cEmuStep"
+          },
+          {
+            "discriminator": {
+              "mapping": {
+                "analog_read": "#/$defs/AnalogReadStep",
+                "edge_delay": "#/$defs/EdgeDelayStep",
+                "freq_duty": "#/$defs/FreqDutyStep",
+                "i2c_log": "#/$defs/I2cLogStep",
+                "logic_trace": "#/$defs/LogicTraceStep",
+                "uart_read": "#/$defs/UartReadStep"
+              },
+              "propertyName": "primitive"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/FreqDutyStep"
+              },
+              {
+                "$ref": "#/$defs/EdgeDelayStep"
+              },
+              {
+                "$ref": "#/$defs/LogicTraceStep"
+              },
+              {
+                "$ref": "#/$defs/UartReadStep"
+              },
+              {
+                "$ref": "#/$defs/I2cLogStep"
+              },
+              {
+                "$ref": "#/$defs/AnalogReadStep"
+              }
+            ]
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Steps",
+      "type": "array"
+    },
+    "not_graded": {
+      "items": {
+        "$ref": "#/$defs/NotGraded"
+      },
+      "title": "Not Graded",
+      "type": "array"
+    },
+    "assumptions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "assignment",
+    "description",
+    "steps"
+  ],
+  "title": "Autograder test plan",
+  "type": "object"
+}

@@ -1,0 +1,18 @@
+submission: button_no_response
+assignment: button_toggle
+description: Reads the wrong pin, so the LED never changes and nothing is printed. A valid "nothing happened" measurement.
+ground_truth: { faulty: true, fault: no_response }
+responses:
+  - match: { cmd: DELAY }
+    reply: { delay_ms: null, to_edge_count: 0 }
+  - match: { cmd: UART }
+    reply: { text: "", byte_count: 0, framing_errors: 0 }
+expected_verdicts:
+  press1_led.delay_ms: FAIL
+  press1_led.to_edge_count: FAIL
+  press1_msg.text: FAIL
+  press1_msg.framing_errors: PASS
+  press2_led.delay_ms: FAIL
+  press2_led.to_edge_count: FAIL
+  press2_msg.text: FAIL
+  press2_msg.framing_errors: PASS

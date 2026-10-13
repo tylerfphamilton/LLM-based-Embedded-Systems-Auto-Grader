@@ -1,0 +1,9 @@
+submission: blink_stuck
+assignment: blink_2hz
+description: pinMode() missing, so the LED never toggles.
+ground_truth: { faulty: true, fault: stuck }
+responses:
+  - match: { cmd: TRACE, pin: D13 }
+    reply: { edge_count: 0, final_level: 0, edges_ms: [] }
+expected_verdicts:
+  blink.edge_count: FAIL
