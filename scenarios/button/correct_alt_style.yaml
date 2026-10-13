@@ -1,0 +1,23 @@
+submission: button_correct_alt_style
+assignment: button_toggle
+description: Correct, but uses a 10 ms debounce timer (slower response, still under 20 ms) and println-free output ("ON\n").
+ground_truth: { faulty: false }
+noise: { seed: 3, fields: { delay_ms: { abs: 0.05 } } }
+responses:
+  - match: { cmd: DELAY }
+    replies:
+      - { delay_ms: 12.5, to_edge_count: 1 }
+      - { delay_ms: 14.0, to_edge_count: 1 }
+  - match: { cmd: UART }
+    replies:
+      - { text: "ON\n", byte_count: 3, framing_errors: 0 }
+      - { text: "OFF\n", byte_count: 4, framing_errors: 0 }
+expected_verdicts:
+  press1_led.delay_ms: PASS
+  press1_led.to_edge_count: PASS
+  press1_msg.text: PASS
+  press1_msg.framing_errors: PASS
+  press2_led.delay_ms: PASS
+  press2_led.to_edge_count: PASS
+  press2_msg.text: PASS
+  press2_msg.framing_errors: PASS

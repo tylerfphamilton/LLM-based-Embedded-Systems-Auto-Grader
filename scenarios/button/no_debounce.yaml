@@ -1,0 +1,22 @@
+submission: button_no_debounce
+assignment: button_toggle
+description: No debouncing. Each of the 5 bounce edges toggles the LED and prints a message.
+ground_truth: { faulty: true, fault: no_debounce }
+responses:
+  - match: { cmd: DELAY }
+    replies:
+      - { delay_ms: 0.4, to_edge_count: 5 }
+      - { delay_ms: 0.4, to_edge_count: 5 }
+  - match: { cmd: UART }
+    replies:
+      - { text: "ON\r\nOFF\r\nON\r\nOFF\r\nON\r\n", byte_count: 22, framing_errors: 0 }
+      - { text: "OFF\r\nON\r\nOFF\r\nON\r\nOFF\r\n", byte_count: 23, framing_errors: 0 }
+expected_verdicts:
+  press1_led.delay_ms: PASS
+  press1_led.to_edge_count: FAIL
+  press1_msg.text: FAIL
+  press1_msg.framing_errors: PASS
+  press2_led.delay_ms: PASS
+  press2_led.to_edge_count: FAIL
+  press2_msg.text: FAIL
+  press2_msg.framing_errors: PASS

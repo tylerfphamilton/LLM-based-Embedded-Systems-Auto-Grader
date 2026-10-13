@@ -1,0 +1,23 @@
+submission: button_too_slow
+assignment: button_toggle
+description: Debounces with a blocking delay(35), so the LED responds after about 35 ms.
+ground_truth: { faulty: true, fault: too_slow }
+noise: { seed: 11, fields: { delay_ms: { abs: 0.05 } } }
+responses:
+  - match: { cmd: DELAY }
+    replies:
+      - { delay_ms: 35.0, to_edge_count: 1 }
+      - { delay_ms: 34.6, to_edge_count: 1 }
+  - match: { cmd: UART }
+    replies:
+      - { text: "ON\r\n", byte_count: 4, framing_errors: 0 }
+      - { text: "OFF\r\n", byte_count: 5, framing_errors: 0 }
+expected_verdicts:
+  press1_led.delay_ms: FAIL
+  press1_led.to_edge_count: PASS
+  press1_msg.text: PASS
+  press1_msg.framing_errors: PASS
+  press2_led.delay_ms: FAIL
+  press2_led.to_edge_count: PASS
+  press2_msg.text: PASS
+  press2_msg.framing_errors: PASS

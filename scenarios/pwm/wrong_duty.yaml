@@ -1,0 +1,11 @@
+submission: pwm_wrong_duty
+assignment: pwm_1khz
+description: Compare value set to half the period, so the duty cycle is 50%.
+ground_truth: { faulty: true, fault: wrong_duty }
+noise: { seed: 2, fields: { frequency_hz: { pct: 0.05 }, duty_pct: { abs: 0.1 } } }
+responses:
+  - match: { cmd: FREQ, pin: D5 }
+    reply: { frequency_hz: 1000.2, duty_pct: 50.0, edge_count: 100 }
+expected_verdicts:
+  pwm.frequency_hz: PASS
+  pwm.duty_pct: FAIL

@@ -1,0 +1,15 @@
+# Known measurement error of the measuring board, per result field.
+# A measured value within this error of a tolerance boundary is graded BORDERLINE.
+#   abs: absolute error in the field's unit; pct: percent of the measured value.
+# Both may be given; they add. Values are ESTIMATES until characterised on hardware.
+name: nucleo-l476rg-draft
+fields:
+  frequency_hz: { pct: 0.05 }   # 80 MHz timer, 100 ms gate: ~0.01% + crystal ppm; padded
+  duty_pct:     { abs: 0.1 }
+  delay_ms:     { abs: 0.02 }
+  mean_mv:      { abs: 5 }
+  min_mv:       { abs: 5 }
+  max_mv:       { abs: 5 }
+timeouts:
+  command_s: 2.0         # base reply timeout for every command
+  slack_factor: 1.5      # plus this times the command's own duration (window, wait, ...)

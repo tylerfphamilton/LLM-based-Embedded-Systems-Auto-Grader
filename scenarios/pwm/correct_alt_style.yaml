@@ -1,0 +1,11 @@
+submission: pwm_correct_alt_style
+assignment: pwm_1khz
+description: Correct, but uses a different timer setup, so the frequency is slightly off nominal while still well inside tolerance.
+ground_truth: { faulty: false }
+noise: { seed: 7, fields: { frequency_hz: { pct: 0.05 }, duty_pct: { abs: 0.1 } } }
+responses:
+  - match: { cmd: FREQ, pin: D5 }
+    reply: { frequency_hz: 1008.5, duty_pct: 25.6, edge_count: 101 }
+expected_verdicts:
+  pwm.frequency_hz: PASS
+  pwm.duty_pct: PASS

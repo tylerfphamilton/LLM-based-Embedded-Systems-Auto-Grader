@@ -1,0 +1,44 @@
+{
+  "schema_version": "0.1",
+  "assignment": "pwm_1khz",
+  "description": "Invalid on purpose: both_tolerances",
+  "setup": {
+    "reset": true,
+    "boot_wait_ms": 500
+  },
+  "steps": [
+    {
+      "op": "measure",
+      "id": "pwm",
+      "requirement": "D5 outputs a 1 kHz PWM signal with 25% duty cycle",
+      "primitive": "freq_duty",
+      "pin": "D5",
+      "window_ms": 100,
+      "expect": [
+        {
+          "field": "frequency_hz",
+          "op": "approx",
+          "value": 1000,
+          "tol_pct": 2,
+          "tol_abs": 5
+        },
+        {
+          "field": "duty_pct",
+          "op": "approx",
+          "value": 25,
+          "tol_abs": 1
+        }
+      ]
+    }
+  ],
+  "not_graded": [
+    {
+      "requirement": "Use a hardware timer (not analogWrite or a delay loop)",
+      "reason": "Not observable electrically"
+    }
+  ],
+  "assumptions": [
+    "Handout gives no tolerance; assumed ±2% frequency and ±1 percentage point duty cycle",
+    "Signal is stable 500 ms after reset"
+  ]
+}

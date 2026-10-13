@@ -1,0 +1,11 @@
+submission: pwm_wrong_prescaler
+assignment: pwm_1khz
+description: Timer prescaler off by a factor of two, so the output is 500 Hz.
+ground_truth: { faulty: true, fault: wrong_prescaler }
+noise: { seed: 1, fields: { frequency_hz: { pct: 0.05 }, duty_pct: { abs: 0.1 } } }
+responses:
+  - match: { cmd: FREQ, pin: D5 }
+    reply: { frequency_hz: 500.0, duty_pct: 25.1, edge_count: 50 }
+expected_verdicts:
+  pwm.frequency_hz: FAIL
+  pwm.duty_pct: PASS

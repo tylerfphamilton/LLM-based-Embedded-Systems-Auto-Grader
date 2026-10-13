@@ -1,0 +1,11 @@
+submission: pwm_correct
+assignment: pwm_1khz
+description: Reference solution. 1 kHz, 25% duty on D5, with realistic measurement noise.
+ground_truth: { faulty: false }
+noise: { seed: 42, fields: { frequency_hz: { pct: 0.05 }, duty_pct: { abs: 0.1 } } }
+responses:
+  - match: { cmd: FREQ, pin: D5 }
+    reply: { frequency_hz: 1000.0, duty_pct: 25.0, edge_count: 100 }
+expected_verdicts:
+  pwm.frequency_hz: PASS
+  pwm.duty_pct: PASS
