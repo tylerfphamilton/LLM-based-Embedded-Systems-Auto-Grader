@@ -184,3 +184,30 @@ determinism test compares reports with `started_at`/`finished_at` removed.
 
 **D34. Python version.** `requires-python >= 3.11` (uses `StrEnum`, `datetime.UTC`).
 Tested on CPython 3.12 and 3.13 on Windows so far; not yet run on 3.11, Linux or macOS.
+
+## LLM layer
+
+"Brief" in this section means `docs/briefs/llm_layer_brief.md`.
+
+**D35. SDK and API version.** The `llm` extra pins `anthropic>=2.0`. SDK 2.x sends API
+version `2026-10-21` by default. `AnthropicClient` takes an injectable `sdk_factory`
+(called as `factory(api_key=, timeout=, max_retries=)`), reads `ANTHROPIC_API_KEY` only in
+`complete()`, and turns *any* exception from the SDK call into `LLMError`. That is broad
+on purpose: an LLM failure may only remove feedback, never crash a grading run. Retries
+are the SDK's own (`max_retries`); there is no retry code here.
+
+**D36. Brief issue: `temperature: 0` is no longer possible.** Since API version
+`2026-10-21` a Messages request that sends `temperature`, `top_p` or `top_k` returns a 400
+on every model, and SDK 2.x no longer has the parameter. `LLMRequest.temperature` is kept
+(as `float | None`, default `None`) so the record of what was asked stays explicit, but
+`config/llm.yaml` sets `temperature: null` and `AnthropicClient` raises `LLMError` before
+calling the API if it is not `None`. Consequence: LLM output is **not** reproducible
+run-to-run. This does not touch verdicts (rule 2), but plan drafts and feedback text can
+differ between runs; the raw responses are saved so a given run can be audited.
+
+**D37. Brief issue: forced `tool_choice` is rejected by some current models.** Claude
+Opus 5.5, Sonnet 5.5 and Fable 5.1 return a 400 for `tool_choice` `{"type": "tool"}`.
+`force_tool: true` (the brief's behaviour, the default) sends the forced choice;
+`force_tool: false` sends `{"type": "auto"}` and relies on the prompt, which names the
+tool. Either way a response without the tool call is an `LLMError`. Pick the setting that
+matches the model you configure; this was not verified against the live API.
