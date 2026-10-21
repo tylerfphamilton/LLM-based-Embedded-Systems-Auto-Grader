@@ -121,7 +121,7 @@ value of the wrong type, means the rig is broken → `ERROR`. `compare` never ra
 verdict `NOT_GRADED`, so the JSON report has one uniform list. They are excluded from
 "graded" totals and listed separately in Markdown.
 
-**D22. Feedback** is requested only for `FAIL` (not BORDERLINE or ERROR). Signature:
+**D22. Feedback** (superseded by D43) is requested only for `FAIL` (not BORDERLINE or ERROR). Signature:
 `explain(check, plan, submission) -> str | None`.
 
 ## FakeRig scenarios
@@ -295,3 +295,29 @@ signal"). `cause_found` is kept only in the raw response for now.
 any grading or output. A failure exits 2 with one sentence. The feedback Markdown is now
 `md_escape`d (it is model output) and gets a "Where to look:" line when there is a code
 location.
+
+**D46. Size: over the ~600-line target.** New source (excluding prompts and tests) is
+about 915 net lines (`git diff --numstat`). About 775 of them are not blank, comments,
+docstrings or lone closing brackets. llm.py is ≈180, planner.py ≈220 and feedback.py ≈230
+(non-blank, non-comment); the CLI is +130. Reasons: `ruff format` puts every argument of
+the CLI options and of the tool-schema/meta dict literals on its own line (≈150 lines);
+the brief's plain-code item checks (D44) and step-log extraction are ≈90 lines; and
+`approve-plan`/provenance is in the same files. No caching, async, retries or provider
+abstraction was added. I chose not to compress the code just to hit the number. The
+candidates if it has to shrink: inline `FEEDBACK_TOOL_DEF` as compact JSON, and drop
+`step_log` in favour of sending the whole (short) command log.
+
+**D47. Not verified without an API key** (all covered only by fakes):
+1. That the API accepts the pydantic plan schema as `input_schema` (D38).
+2. Which current models accept forced `tool_choice` (D37); `force_tool` must match the
+   configured model.
+3. The SDK response → `raw` conversion (`Message.to_dict()`), and that sending
+   `raw["content"]` back as the assistant turn in the repair loop is accepted. That
+   matters most when the model returns thinking blocks.
+4. Prompt quality: whether plans validate within 3 attempts, and whether feedback items
+   cite values in a form that passes D44's checks.
+5. Real token counts and latency. `--dry-run`'s estimate is characters ÷ 4 (≈5.5 k input
+   tokens for `pwm_1khz`, most of it the schema).
+6. That the placeholder sketches compile (D42).
+The two `@pytest.mark.live` tests cover items 1, 3 and part of 4 once a key and a model
+are set.

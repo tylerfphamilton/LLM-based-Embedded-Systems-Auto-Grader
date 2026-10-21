@@ -8,8 +8,8 @@ of an automatic grader for Arduino assignments:
   fixed firmware that takes text commands (`FREQ D5 100`) and replies with numbers.
 * **Host (this repo):** flashes the sketch, runs a **test plan** against the measuring
   board, turns measurements into verdicts, and writes reports.
-* **LLM (later):** writes test plans from handouts and feedback for failed checks. This
-  repo only has the `FeedbackGenerator` hook (`NullFeedback`).
+* **LLM (optional):** drafts test plans from handouts and explains failed checks (see
+  [LLM features](#llm-features)). It never decides a verdict.
 
 The hardware hasn't arrived yet, so everything runs against a **FakeRig** that speaks the
 same text protocol as the planned firmware.
@@ -20,7 +20,7 @@ same text protocol as the planned firmware.
 python -m venv .venv
 # Windows: .venv\Scripts\activate     Linux/macOS: source .venv/bin/activate
 pip install -e ".[dev]"          # add ,serial for real hardware: pip install -e ".[dev,serial]"
-pytest                           # ~200 tests, < 1 s, no hardware or network
+pytest                           # ~260 tests, ~1.5 s, no hardware or network
 ruff check . && ruff format --check .
 
 grader validate-plan plans/pwm_1khz.json
@@ -63,10 +63,14 @@ switching to hardware means swapping the transport and flasher. See `docs/DESIGN
 
 ```
 src/grader/   plan, pinmap, validate, protocol, transport, fake_rig, rig_profile,
-              compare, runner, report, flasher, feedback, batch, clock, cli
-config/       pinmap.yaml (STM32 pins are PLACEHOLDERS), rig_profile.yaml (estimates)
-plans/        one JSON per assignment          schemas/plan.schema.json (generated)
+              compare, runner, report, flasher, feedback, batch, clock, cli,
+              llm, planner, prompts/*.md
+config/       pinmap.yaml (STM32 pins are PLACEHOLDERS), rig_profile.yaml (estimates),
+              llm.yaml (model is a PLACEHOLDER)
+plans/        one JSON per assignment (+ optional <name>.meta.yaml provenance, drafts/)
+schemas/      plan.schema.json (generated)
 scenarios/    <assignment>/*.yaml simulated submissions for the FakeRig
+handouts/     mock handouts for make-plan     benchmark/  placeholder student sketches
 tests/        pytest; tests/fixtures/bad_plans/ = plans that must be rejected
 ```
 
@@ -141,11 +145,67 @@ pytest   # test_end_to_end.py picks up every scenarios/*/*.yaml automatically
 That's all: `blink_2hz` was added to this repo with exactly these four data files and no
 code changes.
 
+## LLM features
+
+Optional. They need the `llm` extra and an Anthropic API key. Without them everything
+else works as before, and the default `pytest` run makes no network calls.
+
+```bash
+pip install -e ".[dev,llm]"
+export ANTHROPIC_API_KEY=sk-ant-...          # PowerShell: $env:ANTHROPIC_API_KEY = "sk-ant-..."
+# then edit config/llm.yaml: set `model` to a current Claude model ID, and set
+# force_tool: false if that model rejects forced tool use (docs/decisions.md D37)
+```
+
+**Draft a plan from a handout.** Check the request first; `--dry-run` needs no key and
+makes no API call:
+
+```bash
+grader make-plan --handout handouts/pwm_1khz.md --name pwm_1khz --dry-run
+grader make-plan --handout handouts/pwm_1khz.md --name pwm_1khz
+```
+
+The LLM output is checked by the same schema + validator as a hand-written plan. Errors
+are sent back to the model (up to 3 attempts). The result is
+`plans/drafts/pwm_1khz.draft.json` plus `plans/pwm_1khz.meta.yaml` (provenance: handout
+hash, model, prompt version, tokens) and `plans/drafts/pwm_1khz.log.json` (every raw
+response).
+
+**Make → review → approve.** A draft is never used directly. Read it, fix it, copy it to
+`plans/<name>.json`, and approve that exact file:
+
+```bash
+grader approve-plan plans/pwm_1khz.json --by "Sean"
+```
+
+`run`/`batch` warn (and record `plan_warnings` in `report.json`) if a plan has a meta
+file that isn't `approved`, or if the file changed after approval. Hand-written plans
+without a meta file run as before. `approve-plan` creates a `source: hand` meta file for
+them.
+
+**Explain failures.** One API call per submission that has at least one FAIL:
+
+```bash
+grader batch --plan plans/pwm_1khz.json --scenarios scenarios/pwm/ --out out/pwm --feedback llm
+```
+
+The explanation appears in `report.md` under "What to fix". `report.json` gets an `llm`
+section (model, prompt version, tokens, latency, warnings, error), and the raw exchange is
+saved to `out/<submission>/llm_feedback.json`. The student's code is sent as untrusted
+data; scenarios link to it with `sketch:`. Items that cite the wrong check or a value that
+wasn't measured are dropped. If the call fails, the report simply has no feedback: the
+verdicts are identical to `--feedback none` (the default).
+
+Live smoke tests (cost money): `pytest -m live` with the key set and a real model in
+`config/llm.yaml`.
+
 ## Status and what is not here
 
 * `SerialTransport` and `ArduinoCliFlasher` are written but **untested on hardware**;
   `--rig serial` warns about this.
 * STM32 pin assignments in `config/pinmap.yaml` and the rig error figures in
   `config/rig_profile.yaml` are placeholders.
-* Not in scope here: the STM32 firmware, LLM calls, web UI, queues, databases,
-  parallel rigs.
+* The LLM layer has only been tested with a fake client: no API key was available, so
+  the plan schema as a tool `input_schema` and the prompts are unverified (D38).
+* Not in scope here: the STM32 firmware, web UI, queues, databases, parallel rigs, other
+  LLM providers.
