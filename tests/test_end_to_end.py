@@ -210,3 +210,16 @@ def test_arduino_cli_flasher_success_and_failures(tmp_path: Path) -> None:
     codes["upload"] = 0
     res = no_board.flash(sub)
     assert not res.ok and res.stage == "upload" and "no USB serial device" in res.log
+
+
+LINKED = [p for p in SCENARIOS if load_scenario(p).sketch is not None]
+
+
+@pytest.mark.parametrize("path", LINKED, ids=lambda p: f"{p.parent.name}/{p.stem}")
+def test_scenario_sketch_links_exist(path: Path) -> None:
+    scenario = load_scenario(path)
+    assert scenario.sketch is not None
+    sketch_dir = ROOT / scenario.sketch
+    ino = sketch_dir / f"{sketch_dir.name}.ino"  # arduino-cli needs <dir>/<dir>.ino
+    assert ino.is_file(), ino
+    assert "PLACEHOLDER" in ino.read_text(encoding="utf-8")

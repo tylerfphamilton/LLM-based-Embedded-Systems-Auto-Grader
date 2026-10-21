@@ -1,5 +1,6 @@
 submission: pwm_correct
 assignment: pwm_1khz
+sketch: benchmark/pwm_1khz/correct   # placeholder sketch (see its header)
 description: Reference solution. 1 kHz, 25% duty on D5, with realistic measurement noise.
 ground_truth: { faulty: false }
 noise: { seed: 42, fields: { frequency_hz: { pct: 0.05 }, duty_pct: { abs: 0.1 } } }

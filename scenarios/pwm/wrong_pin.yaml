@@ -1,5 +1,6 @@
 submission: pwm_wrong_pin
 assignment: pwm_1khz
+sketch: benchmark/pwm_1khz/wrong_pin   # placeholder sketch (see its header)
 description: PWM is output on D6 instead of D5, so D5 shows no signal. This is a valid measurement, not a rig error.
 ground_truth: { faulty: true, fault: wrong_pin }
 responses:

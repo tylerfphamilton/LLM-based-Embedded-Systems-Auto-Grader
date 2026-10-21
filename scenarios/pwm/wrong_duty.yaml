@@ -1,5 +1,6 @@
 submission: pwm_wrong_duty
 assignment: pwm_1khz
+sketch: benchmark/pwm_1khz/wrong_duty   # placeholder sketch (see its header)
 description: Compare value set to half the period, so the duty cycle is 50%.
 ground_truth: { faulty: true, fault: wrong_duty }
 noise: { seed: 2, fields: { frequency_hz: { pct: 0.05 }, duty_pct: { abs: 0.1 } } }

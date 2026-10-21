@@ -1,5 +1,6 @@
 submission: pwm_wrong_prescaler
 assignment: pwm_1khz
+sketch: benchmark/pwm_1khz/wrong_prescaler   # placeholder sketch (see its header)
 description: Timer prescaler off by a factor of two, so the output is 500 Hz.
 ground_truth: { faulty: true, fault: wrong_prescaler }
 noise: { seed: 1, fields: { frequency_hz: { pct: 0.05 }, duty_pct: { abs: 0.1 } } }

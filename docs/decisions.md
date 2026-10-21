@@ -250,3 +250,16 @@ print each warning in yellow on stderr, and store them in `report.json` as
 `plan_warnings`. They are not shown in the student `report.md`, because they are for TAs.
 They never block a run. The runner receives them as data (`plan_warnings=`), since it
 gets a `Plan` and not a path.
+
+**D42. Scenario → sketch links.** `sketch:` is a directory path relative to the repo
+root. `grade_scenario`/`run_batch` take `repo_root` (default `.`, i.e. run from the repo
+root like every other default path in the CLI). The FakeRig never flashes the sketch
+(`NoopFlasher`); it is used only as feedback input. The four placeholder sketches in
+`benchmark/pwm_1khz/` use `mbed::PwmOut` with explicit `PRESCALER`/`COUNTER_TOP`
+constants, so each planted bug is one readable line. **Not compiled:** `arduino-cli` is
+not installed on the development machine. Compile them with
+`arduino-cli compile --fqbn arduino:mbed_nano:nano33ble benchmark/pwm_1khz/<name>` before
+relying on them. The mock handouts `handouts/pwm_1khz.md` and `handouts/button_toggle.md`
+were added in step 2 because the `--dry-run` test needs one. They deliberately give no
+frequency/duty tolerance, no latency number ("quickly") and no boot time, so a generated
+plan has to fill `assumptions`.
