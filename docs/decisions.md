@@ -263,3 +263,35 @@ relying on them. The mock handouts `handouts/pwm_1khz.md` and `handouts/button_t
 were added in step 2 because the `--dry-run` test needs one. They deliberately give no
 frequency/duty tolerance, no latency number ("quickly") and no boot time, so a generated
 plan has to fill `assumptions`.
+
+**D43. Feedback hook (replaces D22).** `explain_all(checks, plan, submission,
+command_log) -> FeedbackResult` is called once per submission, after every verdict is
+final, and only if at least one check is `FAIL`. Its texts and code locations are
+attached to FAIL checks only. An item for a BORDERLINE, ERROR or PASS check is dropped
+like any unknown id. `FeedbackResult` has `texts`, `code_locations`, `llm: LLMInfo | None`
+and `raw` (written to `out/<submission>/llm_feedback.json`; excluded from `report.json` so
+the student code isn't duplicated there). `LLMFeedback` catches `LLMError` only; anything
+else is a bug and should be loud.
+
+**D44. Feedback input and item checks.** Failed checks go to the model as JSON
+(`check_id`, `requirement`, `expected` text, `expected_value`, `measured`, `reason`), so
+the values it must cite are unambiguous. At most 10 passed checks are listed by
+requirement only. Command-log lines are the `tx` lines equal to a failed step's command
+(or `ARM <command>`, plus the `COLLECT <slot>` that slot reply names) and their
+`rx`/`debug` replies; identical commands from other steps are included too (harmless,
+e.g. press 1 and press 2 of the button plan). Source: `*.ino/*.cpp/*.h` under
+`sketch_dir` (recursive, sorted), numbered `   N| `, capped at 40 000 characters in total
+with a visible truncation marker and a warning. A literal `</student_code>` in the source
+is rewritten to `<\/student_code>`, so the code can't close its own block. An item is
+dropped, with a warning, if it is malformed, names a check that isn't a FAIL, repeats a
+check id, or its `cited_value` matches no element of that check's `measured` or
+`expected` value (lists are flattened, so `in_range` bounds and `edges_ms` elements
+count). Numbers compare at 3 significant figures. Everything else needs exact equality:
+a numeric string never matches a number, and `null` matches a `null` measurement ("no
+signal"). `cause_found` is kept only in the raw response for now.
+
+**D45. `--feedback llm` preflight.** `run` and `batch` check the model setting
+(not the placeholder) and `ANTHROPIC_API_KEY` right after the plan validates and before
+any grading or output. A failure exits 2 with one sentence. The feedback Markdown is now
+`md_escape`d (it is model output) and gets a "Where to look:" line when there is a code
+location.

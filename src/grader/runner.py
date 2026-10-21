@@ -9,7 +9,7 @@ from typing import Any
 
 from grader.clock import Clock, SystemClock
 from grader.compare import Measurement, Outcome, Verdict, compare, describe, tolerance
-from grader.feedback import FeedbackGenerator, NullFeedback
+from grader.feedback import FeedbackGenerator, FeedbackResult, NullFeedback
 from grader.flasher import Flasher, FlashResult, Submission
 from grader.pinmap import PinMap
 from grader.plan import (
@@ -237,9 +237,13 @@ def run(
         else:
             checks = _execute(plan, rig, faults)
 
-    for c in checks:
-        if c.verdict == Verdict.FAIL:
-            c.feedback = feedback.explain(c, plan, submission)
+    # Verdicts are final here. One feedback call per submission, and only if something
+    # FAILed; BORDERLINE/ERROR/PASS never get feedback text.
+    failed = [c for c in checks if c.verdict == Verdict.FAIL]
+    fb = feedback.explain_all(checks, plan, submission, rig.log) if failed else FeedbackResult()
+    for c in failed:
+        c.feedback = fb.texts.get(c.id)
+        c.code_location = fb.code_locations.get(c.id)
     for n, ng in enumerate(plan.not_graded, start=1):
         checks.append(
             CheckResult(
@@ -265,6 +269,8 @@ def run(
         assumptions=plan.assumptions,
         rig_faults=faults,
         plan_warnings=list(plan_warnings or []),
+        llm=fb.llm,
+        llm_raw=fb.raw,
         checks=checks,
         command_log=rig.log,
         summary=summarize(checks),

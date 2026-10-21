@@ -14,6 +14,7 @@ import typer
 
 from grader.batch import format_table, grade_scenario, run_batch
 from grader.fake_rig import load_scenario
+from grader.feedback import FeedbackGenerator, LLMFeedback
 from grader.llm import (
     AnthropicClient,
     LLMError,
@@ -53,6 +54,32 @@ DEFAULT_PROFILE = Path("config/rig_profile.yaml")
 class Rig(StrEnum):
     fake = "fake"
     serial = "serial"
+
+
+class FeedbackKind(StrEnum):
+    none = "none"
+    llm = "llm"
+
+
+FeedbackOpt = Annotated[
+    FeedbackKind, typer.Option("--feedback", help="none, or llm (one API call per FAIL report).")
+]
+LLMConfigOpt = Annotated[Path, typer.Option("--llm-config", help="LLM settings YAML.")]
+DEFAULT_LLM_CONFIG = Path("config/llm.yaml")
+
+
+def _feedback_or_exit(kind: FeedbackKind, llm_config: Path) -> FeedbackGenerator | None:
+    """Build the feedback hook. With llm, a missing key or model stops before any grading."""
+    if kind is FeedbackKind.none:
+        return None
+    cfg = load_llm_config(llm_config)
+    try:
+        cfg.check()
+        require_api_key()
+    except LLMError as exc:
+        typer.echo(f"error: --feedback llm: {exc}", err=True)
+        raise typer.Exit(2) from None
+    return LLMFeedback(AnthropicClient.from_config(cfg), cfg)
 
 
 def _utf8_console() -> None:
@@ -145,9 +172,12 @@ def run(
     board_port: Annotated[str | None, typer.Option(help="Student-board port (serial).")] = None,
     pinmap: PinmapOpt = DEFAULT_PINMAP,
     profile: ProfileOpt = DEFAULT_PROFILE,
+    feedback: FeedbackOpt = FeedbackKind.none,
+    llm_config: LLMConfigOpt = DEFAULT_LLM_CONFIG,
 ) -> None:
     """Grade one submission and write report.json + report.md to OUT/<submission>/."""
     p = _load_plan_or_exit(plan, pinmap)
+    fb = _feedback_or_exit(feedback, llm_config)
     warnings = _plan_warnings(plan)
     pm, prof = load_pinmap(pinmap), load_rig_profile(profile)
     if rig is Rig.fake:
@@ -155,20 +185,27 @@ def run(
             raise typer.BadParameter("--rig fake needs --scenario", param_hint="--scenario")
         try:
             report = grade_scenario(
-                p, load_scenario(scenario), pinmap=pm, rig_profile=prof, plan_warnings=warnings
+                p,
+                load_scenario(scenario),
+                pinmap=pm,
+                rig_profile=prof,
+                feedback=fb,
+                plan_warnings=warnings,
             )
         except ValueError as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(2) from None
     else:
-        report = _run_serial(p, sketch, submission, port, board_port, pm, prof, warnings)
+        report = _run_serial(p, sketch, submission, port, board_port, pm, prof, warnings, fb)
     directory = out / report.submission
     json_path, md_path = write_reports(report, directory)
     typer.echo(_summary_line(report))
     typer.echo(f"reports: {json_path}  {md_path}")
 
 
-def _run_serial(plan, sketch, submission, port, board_port, pinmap, profile, warnings) -> Report:
+def _run_serial(
+    plan, sketch, submission, port, board_port, pinmap, profile, warnings, feedback
+) -> Report:
     from grader.flasher import ArduinoCliFlasher, Submission
     from grader.runner import run as run_plan
     from grader.transport import SerialTransport, TransportError
@@ -194,6 +231,7 @@ def _run_serial(plan, sketch, submission, port, board_port, pinmap, profile, war
             ArduinoCliFlasher(port=board_port),
             transport,
             profile,
+            feedback,
             pinmap=pinmap,
             plan_warnings=warnings,
         )
@@ -206,9 +244,12 @@ def batch(
     out: Annotated[Path, typer.Option(help="Output directory.")] = Path("out"),
     pinmap: PinmapOpt = DEFAULT_PINMAP,
     profile: ProfileOpt = DEFAULT_PROFILE,
+    feedback: FeedbackOpt = FeedbackKind.none,
+    llm_config: LLMConfigOpt = DEFAULT_LLM_CONFIG,
 ) -> None:
     """Grade every scenario in a directory (fake rig) and print benchmark metrics."""
     p = _load_plan_or_exit(plan, pinmap)
+    fb = _feedback_or_exit(feedback, llm_config)
     warnings = _plan_warnings(plan)
     paths = sorted(scenarios.glob("*.yaml")) + sorted(scenarios.glob("*.yml"))
     if not paths:
@@ -221,6 +262,7 @@ def batch(
             pinmap=load_pinmap(pinmap),
             rig_profile=load_rig_profile(profile),
             out_dir=out,
+            feedback=fb,
             plan_warnings=warnings,
         )
     except ValueError as exc:
@@ -230,10 +272,6 @@ def batch(
     typer.echo(format_table(rows, metrics))
     md = out / "<submission>" / "report.md"
     typer.echo(f"\nreports: {md}   summary: {out / 'summary.csv'}")
-
-
-LLMConfigOpt = Annotated[Path, typer.Option("--llm-config", help="LLM settings YAML.")]
-DEFAULT_LLM_CONFIG = Path("config/llm.yaml")
 
 
 @app.command("make-plan")

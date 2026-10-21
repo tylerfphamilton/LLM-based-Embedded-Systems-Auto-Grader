@@ -15,6 +15,7 @@ from grader.batch import grade_scenario
 from grader.clock import FakeClock
 from grader.compare import Verdict
 from grader.fake_rig import FakeDevice, Scenario, load_scenario
+from grader.feedback import FeedbackResult
 from grader.flasher import ArduinoCliFlasher, Flasher, FlashResult, Submission
 from grader.plan import PlanError, load_plan
 from grader.report import render_markdown
@@ -148,16 +149,17 @@ def test_feedback_called_only_for_fail(pinmap, rig_profile) -> None:
     calls = []
 
     class Recorder:
-        def explain(self, check, plan, submission):
-            calls.append(check.id)
-            return f"look at {check.field}"
+        def explain_all(self, checks, plan, submission, command_log):
+            failed = [c.id for c in checks if c.verdict == Verdict.FAIL]
+            calls.extend(failed)
+            return FeedbackResult(texts={cid: f"look at {cid}" for cid in failed})
 
     scenario = load_scenario(ROOT / "scenarios/pwm/wrong_prescaler.yaml")
     r = grade_scenario(
         plan_for(scenario), scenario, pinmap=pinmap, rig_profile=rig_profile, feedback=Recorder()
     )
     assert calls == ["pwm.frequency_hz"]
-    assert "look at frequency_hz" in render_markdown(r)
+    assert r"look at pwm.frequency\_hz" in render_markdown(r)  # feedback is Markdown-escaped
 
 
 def test_student_markdown(pinmap, rig_profile) -> None:
