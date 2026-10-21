@@ -54,6 +54,28 @@ def test_first_request_contents(root) -> None:
     assert req.model == "test-model" and req.temperature is None
 
 
+def test_plain_text_answer_is_retried(root, pinmap, good_plan) -> None:
+    fake = FakeLLMClient(
+        [
+            FakeLLMClient.text_reply("Here is the plan: ...", n=1),
+            FakeLLMClient.tool_call(PLAN_TOOL, good_plan, n=2),
+        ]
+    )
+    result = generate_plan(fake, _request(root), name="pwm_1khz", pinmap=pinmap)
+    assert result.ok and result.attempts == 2 and result.tokens == {"input": 200, "output": 100}
+    second = fake.requests[1].messages
+    assert [m["role"] for m in second] == ["user", "assistant", "user"]
+    assert second[1]["content"] == [{"type": "text", "text": "Here is the plan: ..."}]
+    assert second[2]["content"] == f"Call {PLAN_TOOL} with the complete plan."
+
+
+def test_three_plain_text_answers_fail(root, pinmap) -> None:
+    fake = FakeLLMClient([FakeLLMClient.text_reply("no", n=i) for i in (1, 2, 3)])
+    result = generate_plan(fake, _request(root), name="pwm_1khz", pinmap=pinmap)
+    assert not result.ok and result.attempts == 3 and len(result.responses) == 3
+    assert result.errors[0].startswith("plan: no submit_plan call in the answer")
+
+
 def test_valid_on_first_try(root, pinmap, good_plan) -> None:
     fake = FakeLLMClient([FakeLLMClient.tool_call(PLAN_TOOL, good_plan)])
     result = generate_plan(fake, _request(root), name="pwm_1khz", pinmap=pinmap)

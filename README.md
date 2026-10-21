@@ -153,8 +153,8 @@ else works as before, and the default `pytest` run makes no network calls.
 ```bash
 pip install -e ".[dev,llm]"
 export ANTHROPIC_API_KEY=sk-ant-...          # PowerShell: $env:ANTHROPIC_API_KEY = "sk-ant-..."
-# then edit config/llm.yaml: set `model` to a current Claude model ID, and set
-# force_tool: false if that model rejects forced tool use (docs/decisions.md D37)
+# then edit config/llm.yaml: set `model` to a current Claude model ID. Leave
+# force_tool: false unless that model accepts forced tool use (docs/decisions.md D37)
 ```
 
 **Draft a plan from a handout.** Check the request first; `--dry-run` needs no key and

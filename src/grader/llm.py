@@ -25,6 +25,15 @@ class LLMError(Exception):
     """The LLM call failed: no key, API error, or no tool call in the response."""
 
 
+class NoToolCallError(LLMError):
+    """The call worked, but the model answered without calling the tool (e.g. plain text
+    under ``tool_choice: auto``). ``response`` lets a caller retry in the same thread."""
+
+    def __init__(self, message: str, response: LLMResponse):
+        super().__init__(message)
+        self.response = response
+
+
 @dataclass
 class LLMRequest:
     system: str
@@ -60,7 +69,7 @@ class LLMConfig:
     temperature: float | None = None
     timeout_s: float = 120.0
     max_retries: int = 2
-    force_tool: bool = True
+    force_tool: bool = False  # current models reject forced tool_choice (D37)
 
     def check(self) -> None:
         if not self.model or self.model == MODEL_PLACEHOLDER:
@@ -80,7 +89,7 @@ def load_llm_config(path: str | Path) -> LLMConfig:
         temperature=data.get("temperature"),
         timeout_s=float(data.get("timeout_s", 120.0)),
         max_retries=int(data.get("max_retries", 2)),
-        force_tool=bool(data.get("force_tool", True)),
+        force_tool=bool(data.get("force_tool", False)),
     )
 
 
@@ -123,7 +132,7 @@ class AnthropicClient:
         *,
         timeout_s: float = 120.0,
         max_retries: int = 2,
-        force_tool: bool = True,
+        force_tool: bool = False,
         sdk_factory: Callable[..., Any] | None = None,
     ):
         self.timeout_s, self.max_retries, self.force_tool = timeout_s, max_retries, force_tool
@@ -174,24 +183,31 @@ class AnthropicClient:
             raise LLMError(f"Anthropic API call failed: {type(exc).__name__}: {exc}") from None
         latency = time.monotonic() - t0
         raw = resp.to_dict() if hasattr(resp, "to_dict") else dict(resp)
-        tool_input = None
-        if req.tool is not None:
-            block = tool_use_block(raw, req.tool["name"])
-            if block is None:
-                raise LLMError(
-                    f"the response has no '{req.tool['name']}' tool call "
-                    f"(stop_reason={raw.get('stop_reason')!r})"
-                )
-            tool_input = block.get("input")
         usage = raw.get("usage") or {}
-        return LLMResponse(
-            tool_input=tool_input,
+        out = LLMResponse(
+            tool_input=None,
             raw=raw,
             model=str(raw.get("model", req.model)),
             input_tokens=int(usage.get("input_tokens") or 0),
             output_tokens=int(usage.get("output_tokens") or 0),
             latency_s=round(latency, 3),
         )
+        return check_tool_call(req, out)
+
+
+def check_tool_call(req: LLMRequest, resp: LLMResponse) -> LLMResponse:
+    """Fill ``tool_input`` from the response, or raise ``NoToolCallError``."""
+    if req.tool is None:
+        return resp
+    block = tool_use_block(resp.raw, req.tool["name"])
+    if block is None:
+        raise NoToolCallError(
+            f"the response has no '{req.tool['name']}' tool call "
+            f"(stop_reason={resp.raw.get('stop_reason')!r})",
+            resp,
+        )
+    resp.tool_input = block.get("input")
+    return resp
 
 
 @dataclass
@@ -209,19 +225,28 @@ class FakeLLMClient:
         nxt = self.responses.pop(0)
         if isinstance(nxt, Exception):
             raise nxt
-        return nxt
+        return check_tool_call(req, nxt)  # same rule as AnthropicClient
 
     @staticmethod
     def tool_call(name: str, tool_input: dict, n: int = 1) -> LLMResponse:
         """A scripted response containing one tool call with id ``toolu_<n>``."""
         block = {"type": "tool_use", "id": f"toolu_{n}", "name": name, "input": tool_input}
+        return FakeLLMClient._response([block], "tool_use", tool_input, n)
+
+    @staticmethod
+    def text_reply(text: str, n: int = 1) -> LLMResponse:
+        """A scripted plain-text answer with no tool call."""
+        return FakeLLMClient._response([{"type": "text", "text": text}], "end_turn", None, n)
+
+    @staticmethod
+    def _response(content: list[dict], stop: str, tool_input: dict | None, n: int) -> LLMResponse:
         raw = {
             "id": f"msg_{n}",
             "type": "message",
             "role": "assistant",
             "model": "fake-model",
-            "stop_reason": "tool_use",
-            "content": [block],
+            "stop_reason": stop,
+            "content": content,
             "usage": {"input_tokens": 100, "output_tokens": 50},
         }
         return LLMResponse(tool_input, raw, "fake-model", 100, 50, 0.0)

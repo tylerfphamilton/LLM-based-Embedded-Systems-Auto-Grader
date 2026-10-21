@@ -10,8 +10,10 @@ from grader.llm import (
     MODEL_PLACEHOLDER,
     AnthropicClient,
     FakeLLMClient,
+    LLMConfig,
     LLMError,
     LLMRequest,
+    NoToolCallError,
     load_llm_config,
 )
 
@@ -67,7 +69,7 @@ def key(monkeypatch):
 
 def test_forced_tool_choice_and_schema(key) -> None:
     sdk = FakeSDK(_reply([{"type": "tool_use", "id": "t1", "name": "submit_x", "input": {"x": 1}}]))
-    client = AnthropicClient(timeout_s=5, max_retries=3, sdk_factory=sdk.factory)
+    client = AnthropicClient(timeout_s=5, max_retries=3, force_tool=True, sdk_factory=sdk.factory)
     resp = client.complete(_req())
     assert sdk.init_kwargs == {"api_key": "sk-test", "timeout": 5, "max_retries": 3}
     (call,) = sdk.calls
@@ -79,10 +81,11 @@ def test_forced_tool_choice_and_schema(key) -> None:
     assert (resp.input_tokens, resp.output_tokens, resp.model) == (12, 7, "m-1")
 
 
-def test_auto_tool_choice_when_not_forced(key) -> None:
+def test_auto_tool_choice_by_default(key) -> None:
     sdk = FakeSDK(_reply([{"type": "tool_use", "id": "t1", "name": "submit_x", "input": {}}]))
-    AnthropicClient(force_tool=False, sdk_factory=sdk.factory).complete(_req())
+    AnthropicClient(sdk_factory=sdk.factory).complete(_req())
     assert sdk.calls[0]["tool_choice"] == {"type": "auto"}
+    assert LLMConfig().force_tool is False
 
 
 def test_temperature_is_refused_before_any_call(key) -> None:
@@ -103,8 +106,11 @@ def test_missing_key_raises_only_on_complete(monkeypatch) -> None:
 
 def test_no_tool_call_is_an_llm_error(key) -> None:
     sdk = FakeSDK(_reply([{"type": "text", "text": "I'd rather not."}]))
-    with pytest.raises(LLMError, match="no 'submit_x' tool call"):
+    with pytest.raises(NoToolCallError, match="no 'submit_x' tool call") as info:
         AnthropicClient(sdk_factory=sdk.factory).complete(_req())
+    assert isinstance(info.value, LLMError)  # feedback treats it as any LLM failure
+    assert info.value.response.raw["content"][0]["text"] == "I'd rather not."
+    assert info.value.response.input_tokens == 12
 
 
 def test_sdk_exception_becomes_llm_error(key) -> None:

@@ -16,7 +16,15 @@ from typing import Any
 
 import yaml
 
-from grader.llm import LLMClient, LLMConfig, LLMRequest, LLMResponse, load_prompt, tool_use_block
+from grader.llm import (
+    LLMClient,
+    LLMConfig,
+    LLMRequest,
+    LLMResponse,
+    NoToolCallError,
+    load_prompt,
+    tool_use_block,
+)
 from grader.pinmap import PinMap
 from grader.plan import PRIMITIVE_FIELDS, Plan, PlanError, export_schema, parse_plan
 from grader.validate import validate_plan
@@ -125,6 +133,7 @@ def generate_plan(
     max_attempts: int = MAX_ATTEMPTS,
 ) -> PlanResult:
     """Ask for a plan; on errors reply with an ``is_error`` tool_result and ask again.
+    An answer without a ``submit_plan`` call is retried the same way (it uses an attempt).
 
     Raises ``LLMError`` if a call fails outright.
     """
@@ -132,7 +141,17 @@ def generate_plan(
     responses: list[LLMResponse] = []
     errors: list[str] = []
     for attempt in range(1, max_attempts + 1):
-        resp = client.complete(replace(first, messages=list(messages)))
+        try:
+            resp = client.complete(replace(first, messages=list(messages)))
+        except NoToolCallError as exc:
+            responses.append(exc.response)
+            errors = [f"plan: no {PLAN_TOOL} call in the answer ({exc})."]
+            if content := exc.response.raw.get("content"):
+                messages.append({"role": "assistant", "content": content})
+            messages.append(
+                {"role": "user", "content": f"Call {PLAN_TOOL} with the complete plan."}
+            )
+            continue
         responses.append(resp)
         errors = check_draft(resp.tool_input, name, pinmap)
         messages.append({"role": "assistant", "content": resp.raw.get("content", [])})

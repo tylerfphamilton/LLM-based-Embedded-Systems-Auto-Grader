@@ -16,8 +16,9 @@ temperature: null
 timeout_s: 120
 max_retries: 2      # the SDK retries 408/409/429/5xx and connection errors itself
 
-# true  -> tool_choice {"type": "tool", "name": ...}, as the brief asks.
-# false -> tool_choice {"type": "auto"}; the prompt tells the model which tool to call.
-# Some current models (e.g. Claude Opus 5.5, Sonnet 5.5, Fable 5.1) reject forced tool use
-# with a 400, so set this to false for them. See docs/decisions.md D37.
-force_tool: true
+# false -> tool_choice {"type": "auto"}; the prompt tells the model which tool to call, and
+#          make-plan retries if it answers in plain text instead (D39).
+# true  -> tool_choice {"type": "tool", "name": ...}. Current models such as Claude Opus 5.5,
+#          Sonnet 5.5 and Fable 5.1 reject this with a 400; only enable it for a model that
+#          accepts forced tool use. See docs/decisions.md D37.
+force_tool: false

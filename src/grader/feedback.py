@@ -132,8 +132,14 @@ def _is_num(x: Any) -> bool:
     return isinstance(x, int | float) and not isinstance(x, bool)
 
 
+_LEADING_NUMBER = re.compile(r"\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)")
+
+
 def same_value(cited: Any, actual: Any) -> bool:
-    """Numbers equal to 3 significant figures; anything else must be equal."""
+    """Numbers equal to 3 significant figures; anything else must be equal. A cited
+    string with a leading number ("500 Hz") counts as that number."""
+    if isinstance(cited, str) and _is_num(actual) and (m := _LEADING_NUMBER.match(cited)):
+        cited = float(m.group(1))
     if _is_num(cited) and _is_num(actual):
         return float(f"{cited:.3g}") == float(f"{actual:.3g}")
     if _is_num(cited) or _is_num(actual):

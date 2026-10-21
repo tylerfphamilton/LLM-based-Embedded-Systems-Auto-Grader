@@ -207,10 +207,12 @@ differ between runs; the raw responses are saved so a given run can be audited.
 
 **D37. Brief issue: forced `tool_choice` is rejected by some current models.** Claude
 Opus 5.5, Sonnet 5.5 and Fable 5.1 return a 400 for `tool_choice` `{"type": "tool"}`.
-`force_tool: true` (the brief's behaviour, the default) sends the forced choice;
-`force_tool: false` sends `{"type": "auto"}` and relies on the prompt, which names the
-tool. Either way a response without the tool call is an `LLMError`. Pick the setting that
-matches the model you configure; this was not verified against the live API.
+The default is therefore `force_tool: false`, which sends `{"type": "auto"}` and relies on
+the prompt, which names the tool. `force_tool: true` sends the brief's forced choice, for
+models that accept it. A response without the tool call raises `NoToolCallError` (a
+subclass of `LLMError` that carries the response). `make-plan` retries it (D39); for
+feedback it is an ordinary LLM failure, so the report just has no feedback. Not verified
+against the live API.
 
 **D38. Unverified: does the API accept the pydantic plan schema as `input_schema`?** The
 `submit_plan` tool sends `Plan.model_json_schema()` minus the top-level `$schema` key.
@@ -229,8 +231,11 @@ the model's own assistant turn, *unchanged* (all content blocks, including any t
 blocks), then a user turn with one `tool_result` (`is_error: true`) whose content is the
 error sentences joined by `\n`. The history is only ever appended to. An extra check
 beyond the validator: `assignment` must equal `--name`, because the plan file name has
-to match it. An `LLMError` (no key, API error, no tool call) stops the loop at once
-(exit 2) instead of using up an attempt. On failure only `plans/drafts/<name>.log.json`
+to match it. An answer without a `submit_plan` call (`NoToolCallError`, likely with
+`force_tool: false`) uses up an attempt like a validation error. Its content (if any) is
+appended as the assistant turn, followed by the user text "Call submit_plan with the
+complete plan." There is no `tool_result` in that case, because there is no `tool_use`
+id to answer. Any other `LLMError` (no key, API error) stops the loop at once (exit 2). On failure only `plans/drafts/<name>.log.json`
 is written (no draft, no meta). `make-plan` refuses to replace a meta file whose status
 is `approved` unless `--force` is given, so drafting again can't silently revoke an
 approval.
@@ -286,9 +291,11 @@ is rewritten to `<\/student_code>`, so the code can't close its own block. An it
 dropped, with a warning, if it is malformed, names a check that isn't a FAIL, repeats a
 check id, or its `cited_value` matches no element of that check's `measured` or
 `expected` value (lists are flattened, so `in_range` bounds and `edges_ms` elements
-count). Numbers compare at 3 significant figures. Everything else needs exact equality:
-a numeric string never matches a number, and `null` matches a `null` measurement ("no
-signal"). `cause_found` is kept only in the raw response for now.
+count). Numbers compare at 3 significant figures. When the check's value is a number, a
+cited string that *starts* with a number counts as that number, so "500 Hz", "25.1%" and
+"500" match 500. "about 500 Hz" does not, because the number is not leading. The schema
+still allows strings because text checks (`ON`, regexes) need them. Everything else needs
+exact equality, and `null` matches a `null` measurement ("no signal"). `cause_found` is kept only in the raw response for now.
 
 **D45. `--feedback llm` preflight.** `run` and `batch` check the model setting
 (not the placeholder) and `ANTHROPIC_API_KEY` right after the plan validates and before

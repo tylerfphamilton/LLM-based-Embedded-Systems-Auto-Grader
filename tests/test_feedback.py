@@ -119,7 +119,10 @@ def test_cited_expected_value_and_rounding_are_accepted(pinmap, rig_profile) -> 
 def test_same_value() -> None:
     assert same_value(500.0, 500.04) and same_value(1000, 1000.2) and not same_value(500, 510)
     assert same_value("ON", "ON") and not same_value("ON", "ON\r\n")
-    assert same_value(None, None) and not same_value("500", 500) and not same_value(True, 1)
+    assert same_value(None, None) and not same_value(True, 1)
+    assert same_value("500 Hz", 500.04) and same_value("500", 500) and same_value(" 25.1%", 25.1)
+    assert not same_value("about 500 Hz", 500) and not same_value("750 Hz", 500)
+    assert not same_value("500", "500 Hz")  # text values still need exact equality
 
 
 @pytest.mark.parametrize(
