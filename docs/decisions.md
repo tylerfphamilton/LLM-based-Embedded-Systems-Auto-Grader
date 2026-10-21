@@ -121,7 +121,7 @@ value of the wrong type, means the rig is broken → `ERROR`. `compare` never ra
 verdict `NOT_GRADED`, so the JSON report has one uniform list. They are excluded from
 "graded" totals and listed separately in Markdown.
 
-**D22. Feedback** is requested only for `FAIL` (not BORDERLINE or ERROR). Signature:
+**D22. Feedback** (superseded by D43) is requested only for `FAIL` (not BORDERLINE or ERROR). Signature:
 `explain(check, plan, submission) -> str | None`.
 
 ## FakeRig scenarios
@@ -184,3 +184,140 @@ determinism test compares reports with `started_at`/`finished_at` removed.
 
 **D34. Python version.** `requires-python >= 3.11` (uses `StrEnum`, `datetime.UTC`).
 Tested on CPython 3.12 and 3.13 on Windows so far; not yet run on 3.11, Linux or macOS.
+
+## LLM layer
+
+"Brief" in this section means `docs/briefs/llm_layer_brief.md`.
+
+**D35. SDK and API version.** The `llm` extra pins `anthropic>=2.0`. SDK 2.x sends API
+version `2026-10-21` by default. `AnthropicClient` takes an injectable `sdk_factory`
+(called as `factory(api_key=, timeout=, max_retries=)`), reads `ANTHROPIC_API_KEY` only in
+`complete()`, and turns *any* exception from the SDK call into `LLMError`. That is broad
+on purpose: an LLM failure may only remove feedback, never crash a grading run. Retries
+are the SDK's own (`max_retries`); there is no retry code here.
+
+**D36. Brief issue: `temperature: 0` is no longer possible.** Since API version
+`2026-10-21` a Messages request that sends `temperature`, `top_p` or `top_k` returns a 400
+on every model, and SDK 2.x no longer has the parameter. `LLMRequest.temperature` is kept
+(as `float | None`, default `None`) so the record of what was asked stays explicit, but
+`config/llm.yaml` sets `temperature: null` and `AnthropicClient` raises `LLMError` before
+calling the API if it is not `None`. Consequence: LLM output is **not** reproducible
+run-to-run. This does not touch verdicts (rule 2), but plan drafts and feedback text can
+differ between runs; the raw responses are saved so a given run can be audited.
+
+**D37. Brief issue: forced `tool_choice` is rejected by some current models.** Claude
+Opus 5.5, Sonnet 5.5 and Fable 5.1 return a 400 for `tool_choice` `{"type": "tool"}`.
+`force_tool: true` (the brief's behaviour, the default) sends the forced choice;
+`force_tool: false` sends `{"type": "auto"}` and relies on the prompt, which names the
+tool. Either way a response without the tool call is an `LLMError`. Pick the setting that
+matches the model you configure; this was not verified against the live API.
+
+**D38. Unverified: does the API accept the pydantic plan schema as `input_schema`?** The
+`submit_plan` tool sends `Plan.model_json_schema()` minus the top-level `$schema` key.
+It uses `$defs`/`$ref`, `oneOf` with pydantic's OpenAPI-style `discriminator` objects,
+`anyOf`, `const`, `enum`, `pattern`, `patternProperties`, `minItems`, `default` and
+`title`. The tool is **not** marked `strict: true` (strict mode needs
+`additionalProperties: false` everywhere and rejects some of these keywords), so the API
+should treat it as an ordinary JSON Schema and ignore `discriminator`. That has not been
+tried without a key. `--dry-run` only checks that the schema is a JSON object schema and
+prints its size (≈18 KB, ≈4.5 k tokens). The live test `test_live_make_plan` is the
+check. If the API rejects the schema, the smallest fix is to strip `discriminator` keys
+in `planner.plan_tool()`. Our own `parse_plan` + `validate_plan` stay the real gate either way.
+
+**D39. Repair loop details.** At most 3 calls. After a bad attempt the conversation gets
+the model's own assistant turn, *unchanged* (all content blocks, including any thinking
+blocks), then a user turn with one `tool_result` (`is_error: true`) whose content is the
+error sentences joined by `\n`. The history is only ever appended to. An extra check
+beyond the validator: `assignment` must equal `--name`, because the plan file name has
+to match it. An `LLMError` (no key, API error, no tool call) stops the loop at once
+(exit 2) instead of using up an attempt. On failure only `plans/drafts/<name>.log.json`
+is written (no draft, no meta). `make-plan` refuses to replace a meta file whose status
+is `approved` unless `--force` is given, so drafting again can't silently revoke an
+approval.
+
+**D40. Brief change: `plan_sha256` hashes the file bytes with CRLF normalised to LF.**
+This repo has `core.autocrlf=true` on Windows, so the same committed plan has different
+bytes on Windows and Linux checkouts. Hashing exact bytes would make every approval look
+"edited" on the other OS. Only line endings are normalised; any other byte change counts
+as an edit. The same normalisation is used for `handout_sha256` and for the prompt
+version.
+
+**D41. Approval check.** `approve-plan` validates the plan (schema + pin map, exit 1 on
+errors) before writing anything. An existing meta file keeps its provenance fields
+(`source: llm`, model, attempts …); only `status`, `approved_by`, `approved_at` and
+`plan_sha256` change. `run` and `batch` call `approval_warnings()` for the plan path,
+print each warning in yellow on stderr, and store them in `report.json` as
+`plan_warnings`. They are not shown in the student `report.md`, because they are for TAs.
+They never block a run. The runner receives them as data (`plan_warnings=`), since it
+gets a `Plan` and not a path.
+
+**D42. Scenario → sketch links.** `sketch:` is a directory path relative to the repo
+root. `grade_scenario`/`run_batch` take `repo_root` (default `.`, i.e. run from the repo
+root like every other default path in the CLI). The FakeRig never flashes the sketch
+(`NoopFlasher`); it is used only as feedback input. The four placeholder sketches in
+`benchmark/pwm_1khz/` use `mbed::PwmOut` with explicit `PRESCALER`/`COUNTER_TOP`
+constants, so each planted bug is one readable line. **Not compiled:** `arduino-cli` is
+not installed on the development machine. Compile them with
+`arduino-cli compile --fqbn arduino:mbed_nano:nano33ble benchmark/pwm_1khz/<name>` before
+relying on them. The mock handouts `handouts/pwm_1khz.md` and `handouts/button_toggle.md`
+were added in step 2 because the `--dry-run` test needs one. They deliberately give no
+frequency/duty tolerance, no latency number ("quickly") and no boot time, so a generated
+plan has to fill `assumptions`.
+
+**D43. Feedback hook (replaces D22).** `explain_all(checks, plan, submission,
+command_log) -> FeedbackResult` is called once per submission, after every verdict is
+final, and only if at least one check is `FAIL`. Its texts and code locations are
+attached to FAIL checks only. An item for a BORDERLINE, ERROR or PASS check is dropped
+like any unknown id. `FeedbackResult` has `texts`, `code_locations`, `llm: LLMInfo | None`
+and `raw` (written to `out/<submission>/llm_feedback.json`; excluded from `report.json` so
+the student code isn't duplicated there). `LLMFeedback` catches `LLMError` only; anything
+else is a bug and should be loud.
+
+**D44. Feedback input and item checks.** Failed checks go to the model as JSON
+(`check_id`, `requirement`, `expected` text, `expected_value`, `measured`, `reason`), so
+the values it must cite are unambiguous. At most 10 passed checks are listed by
+requirement only. Command-log lines are the `tx` lines equal to a failed step's command
+(or `ARM <command>`, plus the `COLLECT <slot>` that slot reply names) and their
+`rx`/`debug` replies; identical commands from other steps are included too (harmless,
+e.g. press 1 and press 2 of the button plan). Source: `*.ino/*.cpp/*.h` under
+`sketch_dir` (recursive, sorted), numbered `   N| `, capped at 40 000 characters in total
+with a visible truncation marker and a warning. A literal `</student_code>` in the source
+is rewritten to `<\/student_code>`, so the code can't close its own block. An item is
+dropped, with a warning, if it is malformed, names a check that isn't a FAIL, repeats a
+check id, or its `cited_value` matches no element of that check's `measured` or
+`expected` value (lists are flattened, so `in_range` bounds and `edges_ms` elements
+count). Numbers compare at 3 significant figures. Everything else needs exact equality:
+a numeric string never matches a number, and `null` matches a `null` measurement ("no
+signal"). `cause_found` is kept only in the raw response for now.
+
+**D45. `--feedback llm` preflight.** `run` and `batch` check the model setting
+(not the placeholder) and `ANTHROPIC_API_KEY` right after the plan validates and before
+any grading or output. A failure exits 2 with one sentence. The feedback Markdown is now
+`md_escape`d (it is model output) and gets a "Where to look:" line when there is a code
+location.
+
+**D46. Size: over the ~600-line target.** New source (excluding prompts and tests) is
+about 915 net lines (`git diff --numstat`). About 775 of them are not blank, comments,
+docstrings or lone closing brackets. llm.py is ≈180, planner.py ≈220 and feedback.py ≈230
+(non-blank, non-comment); the CLI is +130. Reasons: `ruff format` puts every argument of
+the CLI options and of the tool-schema/meta dict literals on its own line (≈150 lines);
+the brief's plain-code item checks (D44) and step-log extraction are ≈90 lines; and
+`approve-plan`/provenance is in the same files. No caching, async, retries or provider
+abstraction was added. I chose not to compress the code just to hit the number. The
+candidates if it has to shrink: inline `FEEDBACK_TOOL_DEF` as compact JSON, and drop
+`step_log` in favour of sending the whole (short) command log.
+
+**D47. Not verified without an API key** (all covered only by fakes):
+1. That the API accepts the pydantic plan schema as `input_schema` (D38).
+2. Which current models accept forced `tool_choice` (D37); `force_tool` must match the
+   configured model.
+3. The SDK response → `raw` conversion (`Message.to_dict()`), and that sending
+   `raw["content"]` back as the assistant turn in the repair loop is accepted. That
+   matters most when the model returns thinking blocks.
+4. Prompt quality: whether plans validate within 3 attempts, and whether feedback items
+   cite values in a form that passes D44's checks.
+5. Real token counts and latency. `--dry-run`'s estimate is characters ÷ 4 (≈5.5 k input
+   tokens for `pwm_1khz`, most of it the schema).
+6. That the placeholder sketches compile (D42).
+The two `@pytest.mark.live` tests cover items 1, 3 and part of 4 once a key and a model
+are set.

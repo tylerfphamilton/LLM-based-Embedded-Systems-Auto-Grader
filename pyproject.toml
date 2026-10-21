@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 serial = ["pyserial>=3.5"]
+llm = ["anthropic>=2.0"]  # 2.x sends API version 2026-10-21 (no temperature)
 dev = ["pytest>=8", "ruff>=0.5"]
 
 [project.scripts]
@@ -25,9 +26,13 @@ grader = "grader.cli:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+grader = ["prompts/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -m 'not live'"
+markers = ["live: calls the real Anthropic API (needs ANTHROPIC_API_KEY; run with -m live)"]
 
 [tool.ruff]
 line-length = 100

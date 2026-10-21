@@ -108,6 +108,7 @@ class Default(_Model):
 class Scenario(_Model):
     submission: str
     assignment: str | None = None
+    sketch: Path | None = None  # student sketch directory, relative to the repo root
     description: str = ""
     ground_truth: GroundTruth | None = None
     noise: Noise | None = None

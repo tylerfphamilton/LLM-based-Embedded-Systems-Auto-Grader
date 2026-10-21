@@ -30,8 +30,14 @@ def grade_scenario(
     pinmap: PinMap,
     rig_profile: RigProfile,
     feedback: FeedbackGenerator | None = None,
+    plan_warnings: list[str] | None = None,
+    repo_root: Path = Path("."),
 ) -> Report:
-    """Run ``plan`` against the FakeRig for one scenario, with simulated time."""
+    """Run ``plan`` against the FakeRig for one scenario, with simulated time.
+
+    A scenario's ``sketch`` (relative to ``repo_root``) becomes the submission's sketch
+    directory, so feedback can read the student code. The FakeRig never flashes it.
+    """
     if scenario.assignment is not None and scenario.assignment != plan.assignment:
         raise ValueError(
             f"scenario {scenario.submission!r} is for assignment {scenario.assignment!r}, "
@@ -41,13 +47,14 @@ def grade_scenario(
     transport = FakeTransport(FakeDevice(scenario, clock))
     return run(
         plan,
-        Submission(scenario.submission),
+        Submission(scenario.submission, repo_root / scenario.sketch if scenario.sketch else None),
         NoopFlasher(),
         transport,
         rig_profile,
         feedback,
         pinmap=pinmap,
         clock=clock,
+        plan_warnings=plan_warnings,
     )
 
 
@@ -115,12 +122,20 @@ def run_batch(
     rig_profile: RigProfile,
     out_dir: Path | None = None,
     feedback: FeedbackGenerator | None = None,
+    plan_warnings: list[str] | None = None,
+    repo_root: Path = Path("."),
 ) -> tuple[list[BatchRow], BatchMetrics]:
     rows = []
     for path in sorted(scenario_paths):
         scenario = load_scenario(path)
         report = grade_scenario(
-            plan, scenario, pinmap=pinmap, rig_profile=rig_profile, feedback=feedback
+            plan,
+            scenario,
+            pinmap=pinmap,
+            rig_profile=rig_profile,
+            feedback=feedback,
+            plan_warnings=plan_warnings,
+            repo_root=repo_root,
         )
         report_dir = None
         if out_dir is not None:

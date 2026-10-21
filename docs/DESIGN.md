@@ -13,7 +13,8 @@ submission ──Flasher.flash()──▶ FlashResult        Runner (one submiss
                                                      │       │                          (Fake: FakeDevice / Serial: STM32)
                                                      │       ▼
                                                      │   compare(expectation, measurement, RigProfile) ─▶ Verdict
-                                                     │   FAIL ─▶ FeedbackGenerator.explain()  (NullFeedback for now)
+                                                     │ after all steps, if any FAIL:
+                                                     │   FeedbackGenerator.explain_all()  (once; Null or LLM)
                                                      ▼
                                        Report ──▶ report.json + report.md
 batch: many scenarios ─▶ many Reports + ground truth ─▶ summary.csv + metrics
@@ -38,9 +39,12 @@ exercised by every test.
 | `runner.py` | `run()`, `RigClient`, `Clock`/`FakeClock` | Executes a plan for one submission |
 | `report.py` | `Report`, `CheckResult`, `Verdict`, `write_reports()` | JSON + Markdown output |
 | `flasher.py` | `Flasher` ABC, `NoopFlasher`, `ArduinoCliFlasher`, `Submission` | Getting the student's code onto the board |
-| `feedback.py` | `FeedbackGenerator` protocol, `NullFeedback` | Hook for LLM feedback later |
+| `feedback.py` | `FeedbackGenerator` protocol, `FeedbackResult`, `NullFeedback`, `LLMFeedback` | One call per submission explaining FAIL checks; plain-code checks on the items |
+| `llm.py` | `LLMClient` protocol, `LLMRequest`/`LLMResponse`, `AnthropicClient`, `FakeLLMClient`, `LLMError`, `load_prompt` | The only place that talks to an LLM |
+| `planner.py` | `first_request`, `generate_plan` (repair loop), `write_outputs`, `approve`, `approval_warnings` | Handout → draft plan; provenance meta files |
+| `prompts/` | `plan_system.md`, `feedback_system.md` | System prompts; version = first 8 hex of SHA-256 |
 | `batch.py` | `run_batch()`, `BatchMetrics` | Many scenarios + benchmark metrics |
-| `cli.py` | `grader export-schema / validate-plan / run / batch` | Typer CLI |
+| `cli.py` | `grader export-schema / validate-plan / run / batch / make-plan / approve-plan` | Typer CLI |
 
 ## Key rules (from the brief)
 

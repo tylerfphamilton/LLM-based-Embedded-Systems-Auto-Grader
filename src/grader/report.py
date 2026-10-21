@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,6 +27,19 @@ class CheckResult(BaseModel):
     verdict: Verdict
     reason: str
     feedback: str | None = None
+    code_location: str | None = None  # from LLM feedback, e.g. "sketch.ino:14"
+
+
+class LLMInfo(BaseModel):
+    """Metadata of the one feedback call per submission. Never affects a verdict."""
+
+    model: str
+    prompt_version: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    latency_s: float = 0.0
+    warnings: list[str] = Field(default_factory=list)
+    error: str | None = None
 
 
 class LogEntry(BaseModel):
@@ -72,9 +86,12 @@ class Report(BaseModel):
     flash: FlashInfo
     assumptions: list[str] = Field(default_factory=list)
     rig_faults: list[str] = Field(default_factory=list)
+    plan_warnings: list[str] = Field(default_factory=list)  # provenance (meta file)
     checks: list[CheckResult] = Field(default_factory=list)
     command_log: list[LogEntry] = Field(default_factory=list)
     summary: Summary = Field(default_factory=Summary)
+    llm: LLMInfo | None = None
+    llm_raw: dict[str, Any] | None = Field(default=None, exclude=True)  # -> llm_feedback.json
 
     def verdicts(self) -> dict[str, Verdict]:
         return {c.id: c.verdict for c in self.checks if c.verdict != Verdict.NOT_GRADED}
@@ -159,9 +176,11 @@ def render_markdown(r: Report) -> str:
                 f"### ❌ {md_escape(c.requirement)} (`{c.field}`)",
                 "",
                 f"- **Why:** {md_escape(c.reason)}",
-                f"- **Feedback:** {c.feedback or FEEDBACK_PLACEHOLDER}",
-                "",
+                f"- **Feedback:** {md_escape(c.feedback) if c.feedback else FEEDBACK_PLACEHOLDER}",
             ]
+            if c.code_location:
+                out.append(f"- **Where to look:** {md_escape(c.code_location)}")
+            out.append("")
 
     borderline = [c for c in graded if c.verdict == Verdict.BORDERLINE]
     if borderline:
@@ -210,4 +229,7 @@ def write_reports(report: Report, directory: str | Path) -> tuple[Path, Path]:
     md_path = directory / "report.md"
     json_path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
     md_path.write_text(render_markdown(report), encoding="utf-8")
+    if report.llm_raw is not None:
+        text = json.dumps(report.llm_raw, indent=2, ensure_ascii=False) + "\n"
+        (directory / "llm_feedback.json").write_text(text, encoding="utf-8")
     return json_path, md_path

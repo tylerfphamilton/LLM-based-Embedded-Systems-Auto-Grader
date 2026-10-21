@@ -1,0 +1,23 @@
+# LLM settings for `grader make-plan` and `--feedback llm`. The API key is never stored
+# here: export ANTHROPIC_API_KEY instead.
+#
+# !!! model is a PLACEHOLDER. Set a current Claude model ID from Anthropic's docs
+# !!! (https://platform.claude.com/docs/en/about-claude/models/overview).
+model: SET-A-CURRENT-CLAUDE-MODEL-ID
+
+max_tokens:
+  plan: 16000       # a plan is a few KB of JSON; leave room for the model to think
+  feedback: 4000
+
+# The Messages API rejects `temperature` since API version 2026-10-21 (anthropic SDK >= 2.0),
+# so it must stay null. See docs/decisions.md D36.
+temperature: null
+
+timeout_s: 120
+max_retries: 2      # the SDK retries 408/409/429/5xx and connection errors itself
+
+# true  -> tool_choice {"type": "tool", "name": ...}, as the brief asks.
+# false -> tool_choice {"type": "auto"}; the prompt tells the model which tool to call.
+# Some current models (e.g. Claude Opus 5.5, Sonnet 5.5, Fable 5.1) reject forced tool use
+# with a 400, so set this to false for them. See docs/decisions.md D37.
+force_tool: true
