@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import sys
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -12,8 +13,24 @@ import typer
 
 from grader.batch import format_table, grade_scenario, run_batch
 from grader.fake_rig import load_scenario
+from grader.llm import (
+    AnthropicClient,
+    LLMError,
+    load_llm_config,
+    load_prompt,
+    require_api_key,
+)
 from grader.pinmap import load_pinmap
 from grader.plan import PlanError, export_schema, load_plan
+from grader.planner import (
+    PLAN_PROMPT,
+    describe_request,
+    first_request,
+    generate_plan,
+    load_meta,
+    meta_path,
+    write_outputs,
+)
 from grader.report import Report, write_reports
 from grader.rig_profile import load_rig_profile
 from grader.validate import validate_plan
@@ -191,6 +208,60 @@ def batch(
     typer.echo(format_table(rows, metrics))
     md = out / "<submission>" / "report.md"
     typer.echo(f"\nreports: {md}   summary: {out / 'summary.csv'}")
+
+
+LLMConfigOpt = Annotated[Path, typer.Option("--llm-config", help="LLM settings YAML.")]
+DEFAULT_LLM_CONFIG = Path("config/llm.yaml")
+
+
+@app.command("make-plan")
+def make_plan_cmd(
+    handout: Annotated[Path, typer.Option(help="Assignment handout (Markdown or text).")],
+    name: Annotated[str, typer.Option(help="Assignment name, e.g. pwm_1khz.")],
+    pinmap: PinmapOpt = DEFAULT_PINMAP,
+    llm_config: LLMConfigOpt = DEFAULT_LLM_CONFIG,
+    out_dir: Annotated[Path, typer.Option(help="Plans directory.")] = Path("plans"),
+    dry_run: Annotated[bool, typer.Option(help="Print the first request; no API call.")] = False,
+    force: Annotated[bool, typer.Option(help="Overwrite an approved meta file.")] = False,
+) -> None:
+    """Draft a test plan from a handout with the LLM (writes plans/drafts/<name>.draft.json)."""
+    cfg = load_llm_config(llm_config)
+    req = first_request(
+        name, handout.read_text(encoding="utf-8"), pinmap.read_text(encoding="utf-8"), cfg
+    )
+    if dry_run:
+        typer.echo(describe_request(req, load_prompt(PLAN_PROMPT)[1]))
+        return
+    meta = load_meta(meta_path(out_dir / f"{name}.json"))
+    if meta and meta.get("status") == "approved" and not force:
+        typer.echo(
+            f"error: {meta_path(out_dir / f'{name}.json')} is approved; "
+            "use --force to replace it with a new draft",
+            err=True,
+        )
+        raise typer.Exit(2)
+    try:
+        cfg.check()
+        require_api_key()
+        result = generate_plan(
+            AnthropicClient.from_config(cfg), req, name=name, pinmap=load_pinmap(pinmap)
+        )
+    except LLMError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from None
+    paths = write_outputs(
+        result, name=name, handout_path=handout, out_dir=out_dir, now=datetime.now(UTC)
+    )
+    if not result.ok:
+        _print_errors(Path(f"{name} (after {result.attempts} attempts)"), result.errors)
+        typer.echo(f"log: {paths['log']}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"draft: {paths['draft']}  ({result.attempts} attempt(s))")
+    typer.echo(f"meta:  {paths['meta']}   log: {paths['log']}")
+    typer.echo(
+        f"Review the draft, copy it to {out_dir / (name + '.json')}, then run: "
+        f"grader approve-plan {out_dir / (name + '.json')} --by <you>"
+    )
 
 
 if __name__ == "__main__":

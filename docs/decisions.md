@@ -211,3 +211,26 @@ Opus 5.5, Sonnet 5.5 and Fable 5.1 return a 400 for `tool_choice` `{"type": "too
 `force_tool: false` sends `{"type": "auto"}` and relies on the prompt, which names the
 tool. Either way a response without the tool call is an `LLMError`. Pick the setting that
 matches the model you configure; this was not verified against the live API.
+
+**D38. Unverified: does the API accept the pydantic plan schema as `input_schema`?** The
+`submit_plan` tool sends `Plan.model_json_schema()` minus the top-level `$schema` key.
+It uses `$defs`/`$ref`, `oneOf` with pydantic's OpenAPI-style `discriminator` objects,
+`anyOf`, `const`, `enum`, `pattern`, `patternProperties`, `minItems`, `default` and
+`title`. The tool is **not** marked `strict: true` (strict mode needs
+`additionalProperties: false` everywhere and rejects some of these keywords), so the API
+should treat it as an ordinary JSON Schema and ignore `discriminator`. That has not been
+tried without a key. `--dry-run` only checks that the schema is a JSON object schema and
+prints its size (≈18 KB, ≈4.5 k tokens). The live test `test_live_make_plan` is the
+check. If the API rejects the schema, the smallest fix is to strip `discriminator` keys
+in `planner.plan_tool()`. Our own `parse_plan` + `validate_plan` stay the real gate either way.
+
+**D39. Repair loop details.** At most 3 calls. After a bad attempt the conversation gets
+the model's own assistant turn, *unchanged* (all content blocks, including any thinking
+blocks), then a user turn with one `tool_result` (`is_error: true`) whose content is the
+error sentences joined by `\n`. The history is only ever appended to. An extra check
+beyond the validator: `assignment` must equal `--name`, because the plan file name has
+to match it. An `LLMError` (no key, API error, no tool call) stops the loop at once
+(exit 2) instead of using up an attempt. On failure only `plans/drafts/<name>.log.json`
+is written (no draft, no meta). `make-plan` refuses to replace a meta file whose status
+is `approved` unless `--force` is given, so drafting again can't silently revoke an
+approval.
