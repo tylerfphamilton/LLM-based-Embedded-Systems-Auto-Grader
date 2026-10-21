@@ -234,3 +234,19 @@ to match it. An `LLMError` (no key, API error, no tool call) stops the loop at o
 is written (no draft, no meta). `make-plan` refuses to replace a meta file whose status
 is `approved` unless `--force` is given, so drafting again can't silently revoke an
 approval.
+
+**D40. Brief change: `plan_sha256` hashes the file bytes with CRLF normalised to LF.**
+This repo has `core.autocrlf=true` on Windows, so the same committed plan has different
+bytes on Windows and Linux checkouts. Hashing exact bytes would make every approval look
+"edited" on the other OS. Only line endings are normalised; any other byte change counts
+as an edit. The same normalisation is used for `handout_sha256` and for the prompt
+version.
+
+**D41. Approval check.** `approve-plan` validates the plan (schema + pin map, exit 1 on
+errors) before writing anything. An existing meta file keeps its provenance fields
+(`source: llm`, model, attempts …); only `status`, `approved_by`, `approved_at` and
+`plan_sha256` change. `run` and `batch` call `approval_warnings()` for the plan path,
+print each warning in yellow on stderr, and store them in `report.json` as
+`plan_warnings`. They are not shown in the student `report.md`, because they are for TAs.
+They never block a run. The runner receives them as data (`plan_warnings=`), since it
+gets a `Plan` and not a path.

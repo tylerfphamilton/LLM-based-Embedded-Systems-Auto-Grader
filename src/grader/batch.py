@@ -30,6 +30,7 @@ def grade_scenario(
     pinmap: PinMap,
     rig_profile: RigProfile,
     feedback: FeedbackGenerator | None = None,
+    plan_warnings: list[str] | None = None,
 ) -> Report:
     """Run ``plan`` against the FakeRig for one scenario, with simulated time."""
     if scenario.assignment is not None and scenario.assignment != plan.assignment:
@@ -48,6 +49,7 @@ def grade_scenario(
         feedback,
         pinmap=pinmap,
         clock=clock,
+        plan_warnings=plan_warnings,
     )
 
 
@@ -115,12 +117,18 @@ def run_batch(
     rig_profile: RigProfile,
     out_dir: Path | None = None,
     feedback: FeedbackGenerator | None = None,
+    plan_warnings: list[str] | None = None,
 ) -> tuple[list[BatchRow], BatchMetrics]:
     rows = []
     for path in sorted(scenario_paths):
         scenario = load_scenario(path)
         report = grade_scenario(
-            plan, scenario, pinmap=pinmap, rig_profile=rig_profile, feedback=feedback
+            plan,
+            scenario,
+            pinmap=pinmap,
+            rig_profile=rig_profile,
+            feedback=feedback,
+            plan_warnings=plan_warnings,
         )
         report_dir = None
         if out_dir is not None:

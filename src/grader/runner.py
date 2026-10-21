@@ -205,6 +205,7 @@ def run(
     *,
     pinmap: PinMap,
     clock: Clock | None = None,
+    plan_warnings: list[str] | None = None,
 ) -> Report:
     """Grade one submission. Raises PlanError if the plan is invalid."""
     errors = validate_plan(plan, pinmap)
@@ -263,6 +264,7 @@ def run(
         ),
         assumptions=plan.assumptions,
         rig_faults=faults,
+        plan_warnings=list(plan_warnings or []),
         checks=checks,
         command_log=rig.log,
         summary=summarize(checks),

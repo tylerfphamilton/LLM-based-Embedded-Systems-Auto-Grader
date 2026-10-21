@@ -175,3 +175,93 @@ def test_cli_missing_key_is_a_clear_error(root, tmp_path, monkeypatch) -> None:
          "--out-dir", str(tmp_path)],
     )  # fmt: skip
     assert res.exit_code == 2 and "ANTHROPIC_API_KEY is not set" in res.output
+
+
+# ------------------------------------------------------------------- approve-plan + runner
+
+
+def _approve(root, plan_path, by="Sean"):
+    return CliRunner().invoke(
+        cli.app,
+        ["approve-plan", str(plan_path), "--by", by, "--pinmap", str(root / "config/pinmap.yaml")],
+    )
+
+
+def _run(root, plan_path, out):
+    return CliRunner().invoke(
+        cli.app,
+        ["run", "--plan", str(plan_path), "--scenario", str(root / "scenarios/pwm/correct.yaml"),
+         "--pinmap", str(root / "config/pinmap.yaml"),
+         "--profile", str(root / "config/rig_profile.yaml"), "--out", str(out)],
+    )  # fmt: skip
+
+
+@pytest.fixture
+def plan_copy(root, tmp_path):
+    path = tmp_path / "plans" / "pwm_1khz.json"
+    path.parent.mkdir()
+    path.write_bytes((root / "plans" / "pwm_1khz.json").read_bytes())
+    return path
+
+
+def test_approve_creates_hand_meta_with_hash(root, plan_copy) -> None:
+    res = _approve(root, plan_copy)
+    assert res.exit_code == 0, res.output
+    meta = yaml.safe_load((plan_copy.parent / "pwm_1khz.meta.yaml").read_text(encoding="utf-8"))
+    assert meta["source"] == "hand" and meta["status"] == "approved"
+    assert meta["approved_by"] == "Sean" and meta["approved_at"]
+    assert meta["plan_sha256"] == file_sha256(plan_copy)
+
+
+def test_approve_keeps_llm_provenance(root, plan_copy, pinmap, good_plan) -> None:
+    fake = FakeLLMClient([FakeLLMClient.tool_call(PLAN_TOOL, good_plan)])
+    result = generate_plan(fake, _request(root), name="pwm_1khz", pinmap=pinmap)
+    write_outputs(
+        result,
+        name="pwm_1khz",
+        handout_path=root / "handouts" / "pwm_1khz.md",
+        out_dir=plan_copy.parent,
+        now=NOW,
+    )
+    assert _approve(root, plan_copy).exit_code == 0
+    meta = yaml.safe_load((plan_copy.parent / "pwm_1khz.meta.yaml").read_text(encoding="utf-8"))
+    assert meta["source"] == "llm" and meta["status"] == "approved" and meta["attempts"] == 1
+
+
+def test_approve_rejects_invalid_plan(root, tmp_path, bad_plan) -> None:
+    path = tmp_path / "pwm_1khz.json"
+    path.write_text(json.dumps(bad_plan), encoding="utf-8")
+    res = _approve(root, path)
+    assert res.exit_code == 1 and "pin D7" in res.output
+    assert not (tmp_path / "pwm_1khz.meta.yaml").exists()
+
+
+def test_runner_warns_on_draft_and_on_edit_after_approval(root, plan_copy, tmp_path) -> None:
+    def warnings(out):
+        report = json.loads((out / "pwm_correct" / "report.json").read_text(encoding="utf-8"))
+        return report["plan_warnings"]
+
+    res = _run(root, plan_copy, tmp_path / "o1")  # no meta file: runs normally, no warning
+    assert res.exit_code == 0 and warnings(tmp_path / "o1") == []
+
+    meta = plan_copy.parent / "pwm_1khz.meta.yaml"
+    meta.write_text("source: llm\nstatus: draft\n", encoding="utf-8")
+    res = _run(root, plan_copy, tmp_path / "o2")
+    assert res.exit_code == 0 and "not 'approved'" in warnings(tmp_path / "o2")[0]
+
+    assert _approve(root, plan_copy).exit_code == 0
+    assert _run(root, plan_copy, tmp_path / "o3").exit_code == 0
+    assert warnings(tmp_path / "o3") == []
+
+    plan_copy.write_text(plan_copy.read_text(encoding="utf-8").replace("25%", "30%"), "utf-8")
+    res = _run(root, plan_copy, tmp_path / "o4")
+    assert res.exit_code == 0  # a warning never blocks the run
+    assert "changed after it was approved" in warnings(tmp_path / "o4")[0]
+    assert "WARNING" in res.output
+
+
+def test_hash_ignores_line_endings(tmp_path) -> None:
+    a, b = tmp_path / "a.json", tmp_path / "b.json"
+    a.write_bytes(b'{\n  "x": 1\n}\n')
+    b.write_bytes(b'{\r\n  "x": 1\r\n}\r\n')
+    assert file_sha256(a) == file_sha256(b)

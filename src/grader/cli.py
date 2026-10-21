@@ -1,4 +1,5 @@
-"""Command-line interface: ``grader export-schema | validate-plan | run | batch``."""
+"""Command-line interface: ``grader export-schema | validate-plan | run | batch |
+make-plan | approve-plan``."""
 
 from __future__ import annotations
 
@@ -24,6 +25,8 @@ from grader.pinmap import load_pinmap
 from grader.plan import PlanError, export_schema, load_plan
 from grader.planner import (
     PLAN_PROMPT,
+    approval_warnings,
+    approve,
     describe_request,
     first_request,
     generate_plan,
@@ -69,6 +72,14 @@ def _load_plan_or_exit(path: Path, pinmap_path: Path):
         _print_errors(path, errors)
         raise typer.Exit(1)
     return plan
+
+
+def _plan_warnings(path: Path) -> list[str]:
+    """Provenance warnings (unapproved or edited plan). They never block the run."""
+    warnings = approval_warnings(path)
+    for w in warnings:
+        typer.secho(f"WARNING: {w}", fg=typer.colors.YELLOW, err=True)
+    return warnings
 
 
 def _print_errors(path: Path, errors: list[str]) -> None:
@@ -137,24 +148,27 @@ def run(
 ) -> None:
     """Grade one submission and write report.json + report.md to OUT/<submission>/."""
     p = _load_plan_or_exit(plan, pinmap)
+    warnings = _plan_warnings(plan)
     pm, prof = load_pinmap(pinmap), load_rig_profile(profile)
     if rig is Rig.fake:
         if scenario is None:
             raise typer.BadParameter("--rig fake needs --scenario", param_hint="--scenario")
         try:
-            report = grade_scenario(p, load_scenario(scenario), pinmap=pm, rig_profile=prof)
+            report = grade_scenario(
+                p, load_scenario(scenario), pinmap=pm, rig_profile=prof, plan_warnings=warnings
+            )
         except ValueError as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(2) from None
     else:
-        report = _run_serial(p, sketch, submission, port, board_port, pm, prof)
+        report = _run_serial(p, sketch, submission, port, board_port, pm, prof, warnings)
     directory = out / report.submission
     json_path, md_path = write_reports(report, directory)
     typer.echo(_summary_line(report))
     typer.echo(f"reports: {json_path}  {md_path}")
 
 
-def _run_serial(plan, sketch, submission, port, board_port, pinmap, profile) -> Report:
+def _run_serial(plan, sketch, submission, port, board_port, pinmap, profile, warnings) -> Report:
     from grader.flasher import ArduinoCliFlasher, Submission
     from grader.runner import run as run_plan
     from grader.transport import SerialTransport, TransportError
@@ -175,7 +189,13 @@ def _run_serial(plan, sketch, submission, port, board_port, pinmap, profile) -> 
         raise typer.Exit(2) from None
     with transport:
         return run_plan(
-            plan, sub, ArduinoCliFlasher(port=board_port), transport, profile, pinmap=pinmap
+            plan,
+            sub,
+            ArduinoCliFlasher(port=board_port),
+            transport,
+            profile,
+            pinmap=pinmap,
+            plan_warnings=warnings,
         )
 
 
@@ -189,6 +209,7 @@ def batch(
 ) -> None:
     """Grade every scenario in a directory (fake rig) and print benchmark metrics."""
     p = _load_plan_or_exit(plan, pinmap)
+    warnings = _plan_warnings(plan)
     paths = sorted(scenarios.glob("*.yaml")) + sorted(scenarios.glob("*.yml"))
     if not paths:
         typer.echo(f"error: no scenario files in {scenarios}", err=True)
@@ -200,6 +221,7 @@ def batch(
             pinmap=load_pinmap(pinmap),
             rig_profile=load_rig_profile(profile),
             out_dir=out,
+            plan_warnings=warnings,
         )
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -262,6 +284,18 @@ def make_plan_cmd(
         f"Review the draft, copy it to {out_dir / (name + '.json')}, then run: "
         f"grader approve-plan {out_dir / (name + '.json')} --by <you>"
     )
+
+
+@app.command("approve-plan")
+def approve_plan_cmd(
+    plan: Annotated[Path, typer.Argument(help="Reviewed plan JSON file.")],
+    by: Annotated[str, typer.Option(help="Who reviewed and approved the plan.")],
+    pinmap: PinmapOpt = DEFAULT_PINMAP,
+) -> None:
+    """Validate a reviewed plan and mark it approved in plans/<name>.meta.yaml."""
+    _load_plan_or_exit(plan, pinmap)
+    meta = approve(plan, by, datetime.now(UTC))
+    typer.echo(f"{meta_path(plan)}: approved by {by} (sha256 {meta['plan_sha256'][:12]})")
 
 
 if __name__ == "__main__":

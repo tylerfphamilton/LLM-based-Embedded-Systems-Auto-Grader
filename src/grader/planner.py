@@ -232,3 +232,30 @@ def write_outputs(
         },
     )
     return {**paths, "draft": draft, "meta": meta}
+
+
+def approve(plan_path: Path, by: str, now: datetime) -> dict:
+    """Mark a reviewed plan approved; creates a ``source: hand`` meta file if there is none."""
+    path = meta_path(plan_path)
+    meta = load_meta(path) or {"source": "hand"}
+    meta.update(
+        status="approved",
+        approved_by=by,
+        approved_at=now.isoformat(),
+        plan_sha256=file_sha256(plan_path),
+    )
+    write_meta(path, meta)
+    return meta
+
+
+def approval_warnings(plan_path: Path) -> list[str]:
+    """Warnings for a plan whose meta file says it is not (or no longer) approved."""
+    meta = load_meta(meta_path(plan_path))
+    if meta is None:
+        return []  # plans without provenance run normally
+    name = plan_path.as_posix()
+    if meta.get("status") != "approved":
+        return [f"{name}: status is '{meta.get('status')}', not 'approved'; review it first."]
+    if meta.get("plan_sha256") != file_sha256(plan_path):
+        return [f"{name}: the file changed after it was approved; approve it again."]
+    return []

@@ -95,8 +95,9 @@ def require_api_key() -> str:
 
 
 def load_prompt(name: str) -> tuple[str, str]:
-    """Return (text, version); the version is the first 8 hex chars of the file's SHA-256."""
-    data = resources.files("grader.prompts").joinpath(name).read_bytes()
+    """Return (text, version); the version is the first 8 hex chars of the file's SHA-256
+    (CRLF normalised to LF, so a Windows checkout gives the same version)."""
+    data = resources.files("grader.prompts").joinpath(name).read_bytes().replace(b"\r\n", b"\n")
     return data.decode("utf-8"), hashlib.sha256(data).hexdigest()[:8]
 
 

@@ -72,6 +72,7 @@ class Report(BaseModel):
     flash: FlashInfo
     assumptions: list[str] = Field(default_factory=list)
     rig_faults: list[str] = Field(default_factory=list)
+    plan_warnings: list[str] = Field(default_factory=list)  # provenance (meta file)
     checks: list[CheckResult] = Field(default_factory=list)
     command_log: list[LogEntry] = Field(default_factory=list)
     summary: Summary = Field(default_factory=Summary)
