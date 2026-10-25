@@ -70,6 +70,16 @@ class LLMConfig:
     timeout_s: float = 120.0
     max_retries: int = 2
     force_tool: bool = False  # current models reject forced tool_choice (D37)
+    price_input_per_mtok: float | None = None  # USD per million input tokens
+    price_output_per_mtok: float | None = None  # USD per million output tokens
+
+    def cost_usd(self, input_tokens: int, output_tokens: int) -> float | None:
+        """List-price cost of one call, or None when prices are not configured."""
+        if self.price_input_per_mtok is None or self.price_output_per_mtok is None:
+            return None
+        return (
+            input_tokens * self.price_input_per_mtok + output_tokens * self.price_output_per_mtok
+        ) / 1_000_000
 
     def check(self) -> None:
         if not self.model or self.model == MODEL_PLACEHOLDER:
@@ -82,6 +92,7 @@ class LLMConfig:
 def load_llm_config(path: str | Path) -> LLMConfig:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     mt = data.get("max_tokens") or {}
+    price = data.get("price_per_mtok") or {}
     return LLMConfig(
         model=str(data.get("model") or MODEL_PLACEHOLDER),
         plan_max_tokens=int(mt.get("plan", 16000)),
@@ -90,7 +101,13 @@ def load_llm_config(path: str | Path) -> LLMConfig:
         timeout_s=float(data.get("timeout_s", 120.0)),
         max_retries=int(data.get("max_retries", 2)),
         force_tool=bool(data.get("force_tool", False)),
+        price_input_per_mtok=_opt_float(price.get("input")),
+        price_output_per_mtok=_opt_float(price.get("output")),
     )
+
+
+def _opt_float(value: object) -> float | None:
+    return None if value is None else float(value)  # type: ignore[arg-type]
 
 
 def require_api_key() -> str:

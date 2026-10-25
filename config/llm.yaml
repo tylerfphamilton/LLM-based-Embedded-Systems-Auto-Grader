@@ -3,7 +3,7 @@
 #
 # !!! model is a PLACEHOLDER. Set a current Claude model ID from Anthropic's docs
 # !!! (https://platform.claude.com/docs/en/about-claude/models/overview).
-model: SET-A-CURRENT-CLAUDE-MODEL-ID
+model: claude-sonnet-5
 
 max_tokens:
   plan: 16000       # a plan is a few KB of JSON; leave room for the model to think
@@ -22,3 +22,11 @@ max_retries: 2      # the SDK retries 408/409/429/5xx and connection errors itse
 #          Sonnet 5.5 and Fable 5.1 reject this with a 400; only enable it for a model that
 #          accepts forced tool use. See docs/decisions.md D37.
 force_tool: false
+
+# List prices in USD per million tokens, used only to report cost in `batch` output
+# (summary.csv and the printed totals). Copy them from Anthropic's pricing page for the
+# model above (https://platform.claude.com/docs/en/about-claude/pricing); leave them null
+# to report tokens without a cost. Sonnet 5 list price as of 2026-10-25: $2 in / $10 out.
+price_per_mtok:
+  input: 2.00
+  output: 10.00

@@ -1,0 +1,64 @@
+{
+  "schema_version": "0.1",
+  "assignment": "pwm_1khz_llm",
+  "description": "Verify that the student's D5 PWM output is a self-starting 1 kHz / 25% duty square wave. Electrical measurement cannot distinguish hardware-timer PWM from precisely-timed software toggling, so only timing/duty and auto-start are checked; peripheral choice is left for manual TA review.",
+  "setup": {
+    "reset": true,
+    "boot_wait_ms": 300
+  },
+  "steps": [
+    {
+      "op": "measure",
+      "id": "startup_activity",
+      "requirement": "The PWM signal on D5 must already be toggling shortly after reset, without any serial input or button press.",
+      "primitive": "logic_trace",
+      "pin": "D5",
+      "window_ms": 50,
+      "expect": [
+        {
+          "op": "ge",
+          "field": "edge_count",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "pwm_freq_duty",
+      "requirement": "The D5 signal must have a frequency of 1 kHz and a duty cycle of 25%.",
+      "primitive": "freq_duty",
+      "pin": "D5",
+      "window_ms": 500,
+      "expect": [
+        {
+          "op": "approx",
+          "field": "frequency_hz",
+          "value": 1000,
+          "tol_pct": 5
+        },
+        {
+          "op": "approx",
+          "field": "duty_pct",
+          "value": 25,
+          "tol_abs": 2
+        }
+      ]
+    }
+  ],
+  "not_graded": [
+    {
+      "requirement": "Must use a hardware timer/PWM peripheral rather than delay()-based toggling or analogWrite().",
+      "reason": "The electrical output of a correctly-timed software toggle loop is indistinguishable from a hardware timer/PWM output; peripheral usage must be verified by TA code review, not by electrical measurement."
+    },
+    {
+      "requirement": "Register values/constants must be commented and their computation explained.",
+      "reason": "Code comments and documentation are not observable electrically; requires manual review of the submitted source."
+    }
+  ],
+  "assumptions": [
+    "No frequency tolerance was given in the handout, so a 5% tolerance on the 1 kHz target is used to allow for crystal/timer rounding.",
+    "No duty-cycle tolerance was given, so a +/-2 percentage-point absolute tolerance around 25% is used.",
+    "boot_wait_ms is set to 300 ms (shorter than the 500 ms default) to approximate the handout's 'grader starts measuring shortly after reset' and to check self-starting behavior.",
+    "An edge_count >= 2 within a 50 ms window right after boot is used as evidence the signal is already running, without requiring a full period-exact check at startup."
+  ]
+}

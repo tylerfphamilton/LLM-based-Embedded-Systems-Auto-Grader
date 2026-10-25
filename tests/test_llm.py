@@ -129,8 +129,22 @@ def test_fake_client_scripts_and_records() -> None:
     assert len(fake.requests) == 3
 
 
-def test_committed_config_is_a_placeholder(root) -> None:
+def test_committed_config_loads(root) -> None:
+    # The committed config may name a real model; it must never send temperature.
     cfg = load_llm_config(root / "config" / "llm.yaml")
-    assert cfg.model == MODEL_PLACEHOLDER and cfg.temperature is None
+    assert cfg.temperature is None and cfg.force_tool is False
+
+
+def test_placeholder_model_is_refused() -> None:
+    assert LLMConfig().model == MODEL_PLACEHOLDER
     with pytest.raises(LLMError, match="placeholder"):
-        cfg.check()
+        LLMConfig().check()
+
+
+def test_prices_give_cost(tmp_path) -> None:
+    path = tmp_path / "llm.yaml"
+    path.write_text("model: m\nprice_per_mtok:\n  input: 2\n  output: 10\n", encoding="utf-8")
+    cfg = load_llm_config(path)
+    assert cfg.cost_usd(1_000_000, 0) == pytest.approx(2.0)
+    assert cfg.cost_usd(1848, 268) == pytest.approx(0.006376)
+    assert LLMConfig().cost_usd(1848, 268) is None  # no prices configured

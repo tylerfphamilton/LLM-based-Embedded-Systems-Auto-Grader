@@ -250,6 +250,7 @@ def batch(
     """Grade every scenario in a directory (fake rig) and print benchmark metrics."""
     p = _load_plan_or_exit(plan, pinmap)
     fb = _feedback_or_exit(feedback, llm_config)
+    cost = load_llm_config(llm_config).cost_usd if fb is not None else None
     warnings = _plan_warnings(plan)
     paths = sorted(scenarios.glob("*.yaml")) + sorted(scenarios.glob("*.yml"))
     if not paths:
@@ -264,6 +265,7 @@ def batch(
             out_dir=out,
             feedback=fb,
             plan_warnings=warnings,
+            cost_usd=cost,
         )
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)

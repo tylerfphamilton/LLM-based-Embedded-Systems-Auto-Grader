@@ -206,12 +206,14 @@ def test_cli_feedback_llm_without_key_stops_before_grading(root, tmp_path, monke
 
 def test_cli_feedback_llm_placeholder_model_is_refused(root, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    cfg = tmp_path / "llm.yaml"  # not config/llm.yaml: that may name a real model
+    cfg.write_text(f"model: {LLMConfig().model}\n", encoding="utf-8")
     res = CliRunner().invoke(
         cli.app,
         ["run", "--plan", str(root / "plans/pwm_1khz.json"),
          "--scenario", str(root / "scenarios/pwm/wrong_prescaler.yaml"),
          "--out", str(tmp_path), "--pinmap", str(root / "config/pinmap.yaml"),
          "--profile", str(root / "config/rig_profile.yaml"),
-         "--feedback", "llm", "--llm-config", str(root / "config/llm.yaml")],
+         "--feedback", "llm", "--llm-config", str(cfg)],
     )  # fmt: skip
     assert res.exit_code == 2 and "placeholder" in res.output

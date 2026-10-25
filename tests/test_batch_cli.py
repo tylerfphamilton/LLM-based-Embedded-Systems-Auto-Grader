@@ -120,3 +120,54 @@ def test_cli_rejects_scenario_for_other_assignment(monkeypatch, tmp_path: Path) 
         app, ["batch", "--plan", "plans/pwm_1khz.json", "--scenarios", str(tmp_path)]
     )
     assert res.exit_code == 2 and "not 'pwm_1khz'" in res.output
+
+
+def test_batch_reports_llm_tokens_and_cost(pinmap, rig_profile, tmp_path) -> None:
+    from grader.batch import format_table
+    from grader.feedback import FEEDBACK_TOOL, LLMFeedback
+    from grader.llm import FakeLLMClient, LLMConfig
+
+    item = {
+        "check_id": "pwm.frequency_hz",
+        "explanation": "The prescaler halves the frequency.",
+        "cited_value": 500,
+        "code_location": None,
+        "cause_found": True,
+    }
+    fake = FakeLLMClient([FakeLLMClient.tool_call(FEEDBACK_TOOL, {"items": [item]})])
+    cfg = LLMConfig(model="test-model", price_input_per_mtok=2.0, price_output_per_mtok=10.0)
+    rows, m = run_batch(
+        load_plan(ROOT / "plans" / "pwm_1khz.json"),
+        [ROOT / "scenarios/pwm/wrong_prescaler.yaml", ROOT / "scenarios/pwm/correct.yaml"],
+        pinmap=pinmap,
+        rig_profile=rig_profile,
+        out_dir=tmp_path,
+        feedback=LLMFeedback(fake, cfg),
+        repo_root=ROOT,
+        cost_usd=cfg.cost_usd,
+    )
+    # FakeLLMClient reports 100 input + 50 output tokens: 100*2/1e6 + 50*10/1e6 = $0.0007
+    assert (m.llm_calls, m.input_tokens, m.output_tokens) == (1, 100, 50)
+    assert m.cost_usd == pytest.approx(0.0007)
+    with (tmp_path / "summary.csv").open(encoding="utf-8") as fh:
+        table = {r["submission"]: r for r in csv.DictReader(fh)}
+    called = table["pwm_wrong_prescaler"]
+    assert (called["llm_input_tokens"], called["llm_output_tokens"]) == ("100", "50")
+    assert called["llm_cost_usd"] == "0.000700"
+    idle = table["pwm_correct"]  # nothing FAILed, so no call and blank LLM columns
+    assert idle["llm_input_tokens"] == idle["llm_cost_usd"] == ""
+    assert "LLM cost           : $0.0007 total" in format_table(rows, m)
+
+
+def test_batch_without_feedback_has_blank_llm_columns(pinmap, rig_profile, tmp_path) -> None:
+    _, m = run_batch(
+        load_plan(ROOT / "plans" / "pwm_1khz.json"),
+        [ROOT / "scenarios/pwm/wrong_prescaler.yaml"],
+        pinmap=pinmap,
+        rig_profile=rig_profile,
+        out_dir=tmp_path,
+    )
+    assert m.llm_calls == 0 and m.cost_usd is None
+    with (tmp_path / "summary.csv").open(encoding="utf-8") as fh:
+        (r,) = list(csv.DictReader(fh))
+    assert r["llm_input_tokens"] == r["llm_cost_usd"] == ""

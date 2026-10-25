@@ -6,7 +6,7 @@ Ground truth comes from each scenario file and is used *only* here, after gradin
 from __future__ import annotations
 
 import csv
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,6 +68,12 @@ class BatchRow:
     borderline: int
     errors: int
     report_dir: Path | None
+    # LLM feedback call for this submission (at most one; none if nothing FAILed).
+    llm_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    llm_latency_s: float = 0.0
+    cost_usd: float | None = None  # None: no call, or prices not configured
 
     @property
     def flagged(self) -> bool:
@@ -86,6 +92,11 @@ class BatchMetrics:
     submissions_with_error: int
     submissions_with_borderline: int
     unlabelled: int
+    llm_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    llm_latency_s: float = 0.0
+    cost_usd: float | None = None  # None when no call had a known cost
 
     @property
     def detection_rate(self) -> float | None:
@@ -100,6 +111,7 @@ def compute_metrics(rows: Iterable[BatchRow]) -> BatchMetrics:
     rows = list(rows)
     faulty = [r for r in rows if r.faulty is True]
     correct = [r for r in rows if r.faulty is False]
+    costs = [r.cost_usd for r in rows if r.cost_usd is not None]
     return BatchMetrics(
         submissions=len(rows),
         faulty=len(faulty),
@@ -111,6 +123,11 @@ def compute_metrics(rows: Iterable[BatchRow]) -> BatchMetrics:
         submissions_with_error=sum(r.errors > 0 for r in rows),
         submissions_with_borderline=sum(r.borderline > 0 for r in rows),
         unlabelled=sum(r.faulty is None for r in rows),
+        llm_calls=sum(r.llm_calls for r in rows),
+        input_tokens=sum(r.input_tokens for r in rows),
+        output_tokens=sum(r.output_tokens for r in rows),
+        llm_latency_s=sum(r.llm_latency_s for r in rows),
+        cost_usd=sum(costs) if costs else None,
     )
 
 
@@ -124,7 +141,9 @@ def run_batch(
     feedback: FeedbackGenerator | None = None,
     plan_warnings: list[str] | None = None,
     repo_root: Path = Path("."),
+    cost_usd: Callable[[int, int], float | None] | None = None,
 ) -> tuple[list[BatchRow], BatchMetrics]:
+    """Grade every scenario. ``cost_usd(input_tokens, output_tokens)`` prices LLM calls."""
     rows = []
     for path in sorted(scenario_paths):
         scenario = load_scenario(path)
@@ -143,6 +162,7 @@ def run_batch(
             write_reports(report, report_dir)
         gt = scenario.ground_truth
         s = report.summary
+        llm = report.llm
         rows.append(
             BatchRow(
                 submission=scenario.submission,
@@ -153,6 +173,13 @@ def run_batch(
                 borderline=s.BORDERLINE,
                 errors=s.ERROR,
                 report_dir=report_dir,
+                llm_calls=1 if llm else 0,
+                input_tokens=llm.input_tokens if llm else 0,
+                output_tokens=llm.output_tokens if llm else 0,
+                llm_latency_s=llm.latency_s if llm else 0.0,
+                cost_usd=cost_usd(llm.input_tokens, llm.output_tokens)
+                if llm and cost_usd
+                else None,
             )
         )
     metrics = compute_metrics(rows)
@@ -171,6 +198,10 @@ CSV_HEADER = [
     "borderline",
     "error",
     "flagged",
+    "llm_input_tokens",
+    "llm_output_tokens",
+    "llm_latency_s",
+    "llm_cost_usd",
 ]
 
 
@@ -183,6 +214,7 @@ def write_summary_csv(rows: list[BatchRow], path: Path, assignment: str = "") ->
             gt = "" if r.faulty is None else str(r.faulty).lower()
             flagged = str(r.flagged).lower()
             fault = r.fault or ""
+            called = r.llm_calls > 0
             w.writerow(
                 [
                     assignment,
@@ -194,6 +226,10 @@ def write_summary_csv(rows: list[BatchRow], path: Path, assignment: str = "") ->
                     r.borderline,
                     r.errors,
                     flagged,
+                    r.input_tokens if called else "",
+                    r.output_tokens if called else "",
+                    f"{r.llm_latency_s:.3f}" if called else "",
+                    f"{r.cost_usd:.6f}" if r.cost_usd is not None else "",
                 ]
             )
 
@@ -226,4 +262,16 @@ def format_table(rows: list[BatchRow], m: BatchMetrics) -> str:
     ]
     if m.unlabelled:
         lines.append(f"Unlabelled         : {m.unlabelled} (no ground_truth; excluded from rates)")
+    if m.llm_calls:
+        lines.append(
+            f"LLM feedback       : {m.llm_calls} call(s), {m.input_tokens} input + "
+            f"{m.output_tokens} output tokens, {m.llm_latency_s:.1f} s"
+        )
+        if m.cost_usd is None:
+            lines.append("LLM cost           : unknown (set price_per_mtok in config/llm.yaml)")
+        else:
+            lines.append(
+                f"LLM cost           : ${m.cost_usd:.4f} total, "
+                f"${m.cost_usd / m.llm_calls:.4f} per call (list price)"
+            )
     return "\n".join(lines)
