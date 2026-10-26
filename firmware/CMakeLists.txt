@@ -1,0 +1,14 @@
+# Firmware for STM (Sampling MCU) for LLM project
+# This is Zephyrs build system which contains the source files
+
+cmake_minimum_required(VERSION 3.20.0)
+
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(grader_fw)
+
+target_sources(app PRIVATE
+
+    src/main.c
+    src/link.c
+    src/cmd.c
+)

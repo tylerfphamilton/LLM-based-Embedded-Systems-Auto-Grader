@@ -1,0 +1,20 @@
+/*
+ * Board-specific devicetree additions for the grader rig.
+ *
+ * grader,host-uart: the UART that talks to the PC. On the Nucleo-L476RG, USART2
+ * (PA2/PA3) is wired to the ST-Link, which exposes it as a USB COM port.
+ *
+ * Todo later: measurement pins, timers, the student UART (USART1), DAC, ADC and I2C go
+ * here too, matching config/pinmap.yaml in the host repo.
+ */
+
+/{ 
+
+    chosen {
+        grader,host-uart = &usart2;
+    };
+};
+
+&usart2 {
+    current-speed = <115200>;
+};
