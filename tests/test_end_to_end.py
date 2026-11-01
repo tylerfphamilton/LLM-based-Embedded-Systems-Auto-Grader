@@ -17,6 +17,7 @@ from grader.compare import Verdict
 from grader.fake_rig import FakeDevice, Scenario, load_scenario
 from grader.feedback import FeedbackResult
 from grader.flasher import ArduinoCliFlasher, Flasher, FlashResult, Submission
+from grader.pinmap import pinmap_hash
 from grader.plan import PlanError, load_plan
 from grader.report import render_markdown
 from grader.runner import run
@@ -60,7 +61,8 @@ def test_button_uses_arm_collect_on_the_wire(pinmap, rig_profile) -> None:
     scenario = load_scenario(ROOT / "scenarios/button/correct.yaml")
     report = grade_scenario(plan_for(scenario), scenario, pinmap=pinmap, rig_profile=rig_profile)
     tx = [e.line for e in report.command_log if e.dir == "tx"]
-    assert tx[:7] == [
+    assert tx[:8] == [
+        "PING",
         "RESET",
         "WAIT 500",
         "DRIVE D2 RELEASE",
@@ -69,7 +71,7 @@ def test_button_uses_arm_collect_on_the_wire(pinmap, rig_profile) -> None:
         "ARM UART 9600 READ 200",
         "DRIVE D2 BOUNCE 5 200 LOW",
     ]
-    assert tx[7:9] == ["COLLECT 0", "COLLECT 1"]
+    assert tx[8:10] == ["COLLECT 0", "COLLECT 1"]
     # Simulated time advances with the board-side waits/windows, so timestamps are meaningful.
     assert report.command_log[-1].t_ms > 1000
 
@@ -90,7 +92,7 @@ def _pwm_run(pinmap, rig_profile, scenario: dict, flasher: Flasher | None = None
         load_plan(ROOT / "plans/pwm_1khz.json"),
         Submission("s"),
         flasher or NoopFlasher(),
-        FakeTransport(FakeDevice(sc, clock)),
+        FakeTransport(FakeDevice(sc, clock, pinmap_hash=pinmap_hash(pinmap))),
         rig_profile,
         pinmap=pinmap,
         clock=clock,
@@ -111,7 +113,7 @@ def test_malformed_reply_is_error(pinmap, rig_profile) -> None:
 def test_setup_failure_marks_everything_error(pinmap, rig_profile) -> None:
     r = _pwm_run(pinmap, rig_profile, {"fail_command": {"cmd": "RESET", "error": "ERR INTERNAL"}})
     assert set(r.verdicts().values()) == {Verdict.ERROR}
-    assert [e.line for e in r.command_log if e.dir == "tx"] == ["RESET"]
+    assert [e.line for e in r.command_log if e.dir == "tx"] == ["PING", "RESET"]
 
 
 class CompileFails(Flasher):
@@ -124,7 +126,7 @@ class CompileFails(Flasher):
 def test_compile_error_is_student_fail(pinmap, rig_profile) -> None:
     r = _pwm_run(pinmap, rig_profile, {}, CompileFails())
     assert set(r.verdicts().values()) == {Verdict.FAIL}
-    assert r.command_log == []
+    assert [e.line for e in r.command_log if e.dir == "tx"] == ["PING"]  # handshake only
     assert "did not compile" in render_markdown(r)
 
 

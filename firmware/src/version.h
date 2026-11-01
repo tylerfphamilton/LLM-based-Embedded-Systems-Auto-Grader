@@ -5,6 +5,6 @@
 
 // Firmware version, and the protocol version from docs/protocol.md it implements
 #define FW_VERSION "0.1"
-#define PROTOCOL_VERSION "0.1"
+#define PROTOCOL_VERSION "0.2"
 
 #endif

@@ -19,7 +19,7 @@ int main(void){
     }
 
     // startup message
-    link_send_line("# grader-dw " FW_VERSION " reply");
+    link_send_line("# grader-fw " FW_VERSION);
 
     // forever loop
     for (;;){

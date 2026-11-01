@@ -1,8 +1,19 @@
-# Host ↔ measuring-board protocol — DRAFT v0.1
+# Host ↔ measuring-board protocol — DRAFT v0.2
 
 > **Status: draft.** Written host-side so the host software and the FakeRig can be built
 > before the hardware arrives. The firmware author owns this document from here on; any
 > change must be mirrored in `src/grader/protocol.py` (and its round-trip tests).
+
+**Version** `0.2`, in three places that must agree: this document,
+`PROTOCOL_VERSION` in `src/grader/protocol.py` and in `firmware/src/version.h`
+(`tests/firmware/test_reply_c.py` checks the last two).
+
+Changelog:
+
+* **0.2**: `PING` (firmware version, protocol version, pin-map hash); the host handshakes
+  on connect and resyncs after a timeout; lists that do not fit in a line are cut short and
+  marked `truncated=1`.
+* **0.1**: first draft.
 
 ## Transport
 
@@ -21,6 +32,7 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
 
 | Request | Meaning | Reply fields |
 |---|---|---|
+| `PING` | Handshake: is the board answering, and with which firmware? See below | `fw`, `protocol`, `pinmap` (all strings) |
 | `RESET` | Pulse the student board's RESET line | — |
 | `WAIT <ms>` | Board-side delay. Keeps all timing on the board | — |
 | `DRIVE <pin> HIGH\|LOW\|RELEASE` | Drive the pin, or set it to high-Z | — |
@@ -59,6 +71,34 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   `OK slot=1`, `DRIVE D2 BOUNCE 5 200 LOW` → `OK`, `COLLECT 0` → `OK delay_ms=…`,
   `COLLECT 1` → `OK text=…`.
 
+### Handshake (`PING`) and resync
+
+`PING` → `OK fw="0.1" protocol="0.2" pinmap="ceff724f"`.
+
+* `fw`: firmware version (`FW_VERSION` in `firmware/src/version.h`).
+* `protocol`: the protocol version the firmware implements.
+* `pinmap`: the **pin-map hash** the firmware was built with (`PINMAP_HASH` in the
+  generated `firmware/src/pins_gen.h`). Canonical form: one line
+  `name:stm32:cap1,cap2,...` per pin, caps sorted, lines sorted by pin name, joined with
+  `\n` (no trailing newline). The hash is the first 8 hex characters of its SHA-256.
+  Comments, key order, whitespace and line endings of the YAML do not change it. The host
+  computes it with `grader.pinmap.pinmap_hash`.
+
+The host sends `PING`:
+
+* **On connect, before flashing.** If `protocol` differs from the host's, or `pinmap`
+  differs from the hash of the host's pin map, the board is running the wrong firmware:
+  nothing is flashed and every check is `ERROR` ("… reflash the firmware"). If `pinmap` is
+  missing (older firmware), the host adds a warning to the report (`rig_warnings`) and
+  continues. If the first `PING` times out, the host resyncs (below) and asks once more.
+* **After any timeout.** The host discards pending input (stale or late reply lines) and
+  sends one `PING`. If it is answered, grading continues with the next step; the
+  timed-out step is already `ERROR`. If not, every remaining check is `ERROR` ("the
+  measuring board stopped responding") and no further command is sent.
+
+Handshakes and resyncs are logged in the report's command log; resyncs and handshake
+failures are also listed in `rig_faults`.
+
 ## Replies
 
 Exactly one of:
@@ -80,6 +120,16 @@ Every value is a single token, so a reply can be split on spaces.
 | float | decimal or exponent (`-1.5`, `2e-3`); no `nan`/`inf` | `delay_ms=3.25` |
 | string | **double-quoted and percent-encoded**: bytes outside `0x21–0x7E`, plus `%`, `"` and `,`, are written as `%XX` | `text="ON%0D%0A"` |
 | list | `[` comma-separated scalars `]`, empty list is `[]` | `edges_ms=[0.5,250.5,500.4]` |
+
+**Long lists.** If a list does not fit in the 1024-byte line, the board keeps as many
+leading elements as fit, closes the list and adds `truncated=1` right after it (at most
+once per line), e.g. `OK edge_count=400 edges_ms=[123.456,…,229.456] truncated=1`. Counts
+such as `edge_count` still report the full number. A reply that does not fit at all
+becomes `ERR INTERNAL reply too long`.
+
+**Firmware number formatting.** The firmware prints decimals from scaled integers (never
+`%f`): trailing zeros are dropped but one decimal is kept (`999.873`, `1000.0`, `0.0`,
+`-0.005`), which is what the host's `format_response` prints for the same float.
 
 Keys match `[a-z_][a-z0-9_]*` and appear at most once per line. Invalid UTF-8 inside a
 decoded string (for example a student UART at the wrong baud) is replaced with U+FFFD on
@@ -108,7 +158,11 @@ from `config/rig_profile.yaml`.
 
 ## Open questions for the firmware author
 
-1. Is a 1024-byte line limit enough for `UART READ` of long student output? Should the
-   board truncate and add `truncated=1`?
+1. ~~Is a 1024-byte line limit enough for `UART READ` of long student output? Should the
+   board truncate and add `truncated=1`?~~ **Answered (0.2):** the line limit stays at
+   1024 bytes. Lists are cut short and `truncated=1` is added (see "Long lists"). Long
+   `UART READ` text will follow the same rule when `UART READ` is implemented.
 2. Should `transactions` be strings like `"W:0x68:0x3B"` / `"R:0x68:0x3B:6"`? (assumed)
-3. Should the board send a `READY fw=… protocol=0.1` banner on connect? (not yet required)
+3. ~~Should the board send a `READY fw=… protocol=0.1` banner on connect?~~ **Superseded
+   (0.2):** the host sends `PING` on connect instead. The board's `# grader-fw …` startup
+   line is a debug line and is ignored.

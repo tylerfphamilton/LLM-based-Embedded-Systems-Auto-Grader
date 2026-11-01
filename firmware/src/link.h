@@ -7,11 +7,11 @@
 #include <stddef.h>
 
 // max length of a transmission over UART (from docs/protocol.md - excluding the null terminator)
-#define LINE_MAX 1024
+#define PROTO_LINE_MAX 1024
 
 // info for transmitting data
 struct line {
-    char text[LINE_MAX + 1];    // added one for the null terminator
+    char text[PROTO_LINE_MAX + 1];    // added one for the null terminator
     bool too_long;  // boolean to see if the line length was longer than LINE_MAX because the text is cutoff in this case
 };
 

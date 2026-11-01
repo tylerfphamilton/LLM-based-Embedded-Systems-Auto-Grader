@@ -17,12 +17,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from grader.clock import FakeClock
 from grader.protocol import (
+    PROTOCOL_VERSION,
     Arm,
     Collect,
     Command,
     Debug,
     Err,
     Ok,
+    Ping,
     ProtocolError,
     format_response,
     parse_command,
@@ -80,17 +82,45 @@ class ResponseRule(_Model):
 
 
 class FailRule(_Model):
-    """Make a command (stimulus or measurement) fail: reply with ``error`` or stay silent."""
+    """Make a command (stimulus or measurement) fail: reply with ``error`` or stay silent.
+
+    ``after`` lets that many matching commands through normally before failing, e.g. a
+    board that answers the connect ``PING`` and then stops responding.
+    """
 
     cmd: str
     match: dict[str, MatchValue] = Field(default_factory=dict)
     error: str | None = None
     silent: bool = False
+    after: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _one_kind(self) -> FailRule:
         if (self.error is not None) == self.silent:
             raise ValueError("fail_command needs exactly one of 'error' or 'silent: true'")
+        if self.error is not None:
+            _check_err_line(self.error)
+        return self
+
+
+class PingReply(_Model):
+    """Override the FakeDevice's ``PING`` reply, e.g. to test a firmware mismatch.
+
+    Fields left out get the device's defaults (``fw="fake"``, the host's protocol version,
+    the pin-map hash the device was given). A field set to ``null`` is left out of the
+    reply, like older firmware. ``error`` / ``silent`` make ``PING`` fail instead.
+    """
+
+    fw: str | None = None
+    protocol: str | None = None
+    pinmap: str | None = None
+    error: str | None = None
+    silent: bool = False
+
+    @model_validator(mode="after")
+    def _check(self) -> PingReply:
+        if self.error is not None and self.silent:
+            raise ValueError("ping needs at most one of 'error' or 'silent: true'")
         if self.error is not None:
             _check_err_line(self.error)
         return self
@@ -113,6 +143,7 @@ class Scenario(_Model):
     ground_truth: GroundTruth | None = None
     noise: Noise | None = None
     debug_lines: bool = False
+    ping: PingReply | None = None
     responses: list[ResponseRule] = Field(default_factory=list)
     fail_command: FailRule | list[FailRule] | None = None
     default: Default = Field(default_factory=Default)
@@ -136,9 +167,19 @@ def _matches(match: dict[str, MatchValue], fields: dict[str, str]) -> bool:
 class FakeDevice:
     """Speaks the measuring-board protocol, answering from a scenario."""
 
-    def __init__(self, scenario: Scenario, clock: FakeClock | None = None):
+    def __init__(
+        self,
+        scenario: Scenario,
+        clock: FakeClock | None = None,
+        *,
+        pinmap_hash: str | None = None,
+    ):
+        """``pinmap_hash``: what ``PING`` reports as ``pinmap`` (normally the hash of the pin
+        map the run uses). If None, the field is left out, like older firmware."""
         self.scenario = scenario
         self._clock = clock
+        self._pinmap_hash = pinmap_hash
+        self._fail_seen = [0] * len(scenario.fail_rules)
         self._rng = random.Random(scenario.noise.seed) if scenario.noise else None
         self._cursor = [0] * len(scenario.responses)
         self._slots: dict[int, tuple[list[str], float]] = {}
@@ -163,6 +204,9 @@ class FakeDevice:
             self._clock.advance(ms / 1000)
 
     def _respond(self, cmd: Command) -> list[str]:
+        if isinstance(cmd, Ping):
+            failed = self._failure(cmd)
+            return self._ping() if failed is None else failed
         if isinstance(cmd, Arm):
             failed = self._failure(cmd)
             if failed is not None:
@@ -184,10 +228,25 @@ class FakeDevice:
         self._advance(cmd.duration_ms())
         return self._reply(cmd)
 
+    def _ping(self) -> list[str]:
+        spec = self.scenario.ping or PingReply()
+        if spec.silent:
+            return []
+        if spec.error is not None:
+            return [spec.error]
+        defaults = {"fw": "fake", "protocol": PROTOCOL_VERSION, "pinmap": self._pinmap_hash}
+        values = {
+            k: getattr(spec, k) if k in spec.model_fields_set else v for k, v in defaults.items()
+        }
+        return [format_response(Ok({k: v for k, v in values.items() if v is not None}))]
+
     def _failure(self, cmd: Command) -> list[str] | None:
         fields = cmd.match_fields()
-        for rule in self.scenario.fail_rules:
+        for i, rule in enumerate(self.scenario.fail_rules):
             if _matches({"cmd": rule.cmd, **rule.match}, fields):
+                if self._fail_seen[i] < rule.after:
+                    self._fail_seen[i] += 1
+                    continue
                 return [] if rule.silent else [rule.error or ""]
         return None
 

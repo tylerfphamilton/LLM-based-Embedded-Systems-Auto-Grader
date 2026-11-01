@@ -62,7 +62,7 @@ static void uart_isr(const struct device* dev, void* user_data){
             finish_line();
         }
         // if the received length is less than the max sending length, add the char from the fifo to the struct
-        else if (rx_len < LINE_MAX){
+        else if (rx_len < PROTO_LINE_MAX){
             rx.text[rx_len++] = (char) c;
         }
         else {

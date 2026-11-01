@@ -11,3 +11,5 @@ pins:
   A0:  { stm32: TBD,  caps: [analog_in, dac] }        # placeholder; L476 DAC1_OUT1 is PA4
   A4:  { stm32: TBD,  caps: [i2c_sda] }               # placeholder, STM32 acts as I2C target
   A5:  { stm32: TBD,  caps: [i2c_scl] }               # placeholder
+  # Rig only, never used by a plan: open-drain line from the STM32 to the Nano's RST pin.
+  RST: { stm32: TBD,  caps: [reset] }

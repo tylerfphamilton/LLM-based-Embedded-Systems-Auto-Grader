@@ -6,6 +6,7 @@ the STM32 receives on that wire (the student transmits).
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Literal
 
@@ -22,7 +23,12 @@ Capability = Literal[
     "dac",
     "i2c_sda",
     "i2c_scl",
+    "reset",
 ]
+
+# Capabilities only the rig itself uses (e.g. the student board's RST line). No plan step
+# needs them, so validation rejects any step that names such a pin.
+RIG_ONLY_CAPS = frozenset({"reset"})
 
 
 class PinInfo(BaseModel):
@@ -50,3 +56,20 @@ class PinMap(BaseModel):
 def load_pinmap(path: str | Path) -> PinMap:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     return PinMap.model_validate(data)
+
+
+def pinmap_canonical(pinmap: PinMap) -> str:
+    """One ``name:stm32:cap1,cap2`` line per pin (caps sorted), lines sorted by name."""
+    lines = [
+        f"{name}:{info.stm32}:{','.join(sorted(info.caps))}"
+        for name, info in sorted(pinmap.pins.items())
+    ]
+    return "\n".join(lines)
+
+
+def pinmap_hash(pinmap: PinMap) -> str:
+    """Short hash the host and the measuring-board firmware both compute (PING ``pinmap``).
+
+    Comments, key order, whitespace and line endings of the YAML do not change it.
+    """
+    return hashlib.sha256(pinmap_canonical(pinmap).encode("utf-8")).hexdigest()[:8]

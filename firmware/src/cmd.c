@@ -3,13 +3,15 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "pins.h"
+#include "reply.h"
 #include "version.h"
 
 // most tokens a request can have (including the verb)
 #define MAX_ARGS 16
 
-// Size of the buffer for formatted error replies
-#define REPLY_MAX 1100
+// Size of the buffer for formatted error messages (reply_err adds "ERR <CODE> ")
+#define REPLY_MAX 128
 
 // struct for the args ()
 struct args {
@@ -31,11 +33,18 @@ struct command {
 
 // ---------------------- handlers -----------------------------
 
-// license and version check (host sends it on connect after a T.O. to make sure the board is answering)
+// liveness and version check (host sends it on connect and after a T.O. to make sure the board is answering)
+// also reports the pin-map hash so the host can check the firmware was built from the same config/pinmap.yaml
 static void cmd_ping(const struct args *a, reply_fn reply){
     
+    struct reply_buf r;
     (void) a;
-    reply("OK fw=\"" FW_VERSION "\" protocol=\"" PROTOCOL_VERSION "\"");
+
+    reply_begin(&r);
+    reply_str(&r, "fw", (const uint8_t *)FW_VERSION, strlen(FW_VERSION));
+    reply_str(&r, "protocol", (const uint8_t *)PROTOCOL_VERSION, strlen(PROTOCOL_VERSION));
+    reply_str(&r, "pinmap", (const uint8_t *)pins_map_hash, strlen(pins_map_hash));
+    reply_send(&r, reply);
 }
 
 // Command Table
@@ -89,13 +98,13 @@ void cmd_handle(char* line, reply_fn reply){
 
     // checking the line
     if(split(line, &a) < 0){
-        reply("ERR BADCMD too many arguments");
+        reply_err(reply, "BADCMD", "too many arguments");
         return;
     }
 
     // check to see if there are blank lines or a line of only spaces
     if (a.argc == 0){
-        reply("ERR BADCMD empty request");
+        reply_err(reply, "BADCMD", "empty request");
         return;
     }
 
@@ -116,12 +125,12 @@ void cmd_handle(char* line, reply_fn reply){
         // wrong arg count: reply with what was expected
         if (n < c->min_args || n > c->max_args){
             if (c->min_args == c->max_args){
-                snprintf(msg, sizeof(msg), "ERR BADCMD %s takes %d arguments, got %d", c->verb, c->min_args, n);
+                snprintf(msg, sizeof(msg), "%s takes %d arguments, got %d", c->verb, c->min_args, n);
             }
             else {
-                snprintf(msg, sizeof(msg), "ERR BADCMD %s takes %d-%d arguments, got %d", c->verb, c->min_args, c->max_args, n);
+                snprintf(msg, sizeof(msg), "%s takes %d-%d arguments, got %d", c->verb, c->min_args, c->max_args, n);
             }
-            reply(msg);
+            reply_err(reply, "BADCMD", msg);
             return;
         }
 
@@ -130,9 +139,9 @@ void cmd_handle(char* line, reply_fn reply){
         return;
     }
 
-    // No ros matches.
-    snprintf(msg, sizeof(msg), "ERR BADCMD unknown verb %.32s", a.argv[0]);
-    reply(msg);
+    // No row matches.
+    snprintf(msg, sizeof(msg), "unknown verb %.32s", a.argv[0]);
+    reply_err(reply, "BADCMD", msg);
 }
 
 

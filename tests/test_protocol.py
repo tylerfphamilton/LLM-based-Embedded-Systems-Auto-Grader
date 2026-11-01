@@ -7,6 +7,7 @@ from grader.plan import load_plan
 from grader.protocol import Debug, Err, Ok, ProtocolError, parse_command, parse_response
 
 COMMANDS: list[tuple[pr.Command, str]] = [
+    (pr.Ping(), "PING"),
     (pr.Reset(), "RESET"),
     (pr.Wait(500), "WAIT 500"),
     (pr.DriveLevel("D2", "high"), "DRIVE D2 HIGH"),
@@ -46,6 +47,7 @@ def test_every_command_class_is_covered() -> None:
     [
         "",
         "JUMP D5",
+        "PING now",
         "FREQ D5",
         "FREQ D5 abc",
         "DRIVE D2 SIDEWAYS",

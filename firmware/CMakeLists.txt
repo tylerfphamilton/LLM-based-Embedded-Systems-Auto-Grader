@@ -11,4 +11,6 @@ target_sources(app PRIVATE
     src/main.c
     src/link.c
     src/cmd.c
+    src/reply.c
+    src/pins.c
 )
