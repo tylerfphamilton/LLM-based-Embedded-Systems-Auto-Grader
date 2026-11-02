@@ -52,9 +52,13 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
 
 ### Measurement semantics
 
-* `FREQ`: if fewer than 2 rising edges occur in the window, the reply is
-  `frequency_hz=null duty_pct=null` with the actual `edge_count`. **No signal is a valid
-  measurement, not an error.**
+* `FREQ`: `edge_count` is the number of **rising** edges in the window (100 for 1 kHz
+  over 100 ms). `frequency_hz` = (rising edges − 1) / time from the first to the last
+  rising edge; `duty_pct` = average high time / average period, from pulses whose rising
+  edge was inside the window. If fewer than 2 rising edges occur in the window, the reply
+  is `frequency_hz=null duty_pct=null` with the actual `edge_count`. **No signal is a
+  valid measurement, not an error.** Edges arriving faster than the board can time them
+  give `ERR INTERNAL capture overrun …` (a rig fault).
 * `DELAY`: `delay_ms` is measured from the first matching edge on from_pin. If from_pin
   is the pin the board is driving, this is the moment the board drove it.
   `to_edge_count` counts *every* edge of the requested kind on to_pin from that trigger

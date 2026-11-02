@@ -1,28 +1,10 @@
-// pin table lookups (the table is generated: see scripts/gen_pins_h.py)
+// Zephyr side of the pin table: port letter -> GPIO device.
+// The plain-C lookups (pins_find, pins_wired, ...) are in pins_table.c.
 
 #include "pins.h"
 
-#include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
-
-#include "pins_gen.h"
-
-const char pins_map_hash[] = PINMAP_HASH;
-
-const struct pin_def* pins_find(const char* name){
-
-    for (size_t i = 0; i < PINS_COUNT; i++){
-        if (strcmp(PINS[i].name, name) == 0){
-            return &PINS[i];
-        }
-    }
-    return NULL;
-}
-
-bool pins_wired(const struct pin_def* p){
-    return p != NULL && p->port != 0;
-}
 
 // one case per GPIO port the L476RG (LQFP64) has, only if it is enabled in the devicetree
 const struct device* pins_port_device(char port){

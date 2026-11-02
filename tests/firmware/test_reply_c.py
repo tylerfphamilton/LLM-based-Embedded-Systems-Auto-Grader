@@ -42,7 +42,12 @@ def ok(**fields: Any) -> str:
 def output(tmp_path_factory) -> tuple[dict[str, str], list[str]]:
     assert COMPILER is not None
     exe = tmp_path_factory.mktemp("fw") / "reply_harness.exe"
-    sources = [Path(__file__).with_name("reply_harness.c"), FW / "reply.c", FW / "cmd.c"]
+    sources = [
+        Path(__file__).with_name("reply_harness.c"),
+        FW / "reply.c",
+        FW / "cmd.c",
+        FW / "pins_table.c",
+    ]
     cmd = [COMPILER, "-std=c11", "-Wall", "-Wextra", "-Werror", f"-I{FW}", "-o", str(exe)]
     build = subprocess.run([*cmd, *map(str, sources)], capture_output=True, text=True)
     assert build.returncode == 0, build.stdout + build.stderr
@@ -54,6 +59,9 @@ def output(tmp_path_factory) -> tuple[dict[str, str], list[str]]:
         if name == "pin":
             pins.append(line)
         else:
+            if name == "freqpin":  # "freqpin\t<pin>\t<reply>" -> case "freqpin:<pin>"
+                pin, _, line = line.partition("\t")
+                name = f"freqpin:{pin}"
             assert name not in cases, name
             cases[name] = line
     return cases, pins
@@ -142,3 +150,73 @@ def test_generated_pin_table_matches_pinmap(output, pinmap) -> None:
         bits = sum(1 << n for n, c in enumerate(caps) if c in info.caps)
         expected.append(f"{name} {port} {num} {bits}")
     assert output[1] == expected
+
+
+# --------------------------------------------------------------------------- FREQ
+
+
+def _wired(stm32: str) -> re.Match[str] | None:
+    return re.fullmatch(r"P([A-K])(\d{1,2})", stm32)
+
+
+def test_freq_checks_every_pin_against_the_pin_map(output, pinmap) -> None:
+    """FREQ runs only on wired timer_capture pins; every other pin is a BADPIN rig fault."""
+    one_khz = ok(frequency_hz=1000.0, duty_pct=25.0, edge_count=100)
+    for name, info in pinmap.pins.items():
+        line = output[0][f"freqpin:{name}"]
+        if "timer_capture" not in info.caps:
+            want = Err("BADPIN", f"pin {name} has no timer_capture capability")
+            assert line == format_response(want), name
+        elif not _wired(info.stm32):
+            want = Err("BADPIN", f"pin {name} is not wired (TBD in the pin map)")
+            assert line == format_response(want), name
+        else:
+            assert line == one_khz, name
+    unknown = Err("BADPIN", "pin D99 is not in the pin map")
+    assert output[0]["freq_unknown"] == format_response(unknown)
+
+
+@pytest.fixture
+def freq_cases(output, pinmap) -> dict[str, str]:
+    cases = output[0]
+    if "freq_pin" not in cases:
+        pytest.skip("no wired timer_capture pin in config/pinmap.yaml")
+    m = _wired(pinmap.pins[cases["freq_pin"]].stm32)
+    assert m
+    cases = dict(cases)
+    cases["_stm32"] = f"{m.group(1)} {int(m.group(2))}"
+    return cases
+
+
+def test_freq_measures_through_the_mapped_stm32_pin(freq_cases) -> None:
+    assert freq_cases["freq_call"] == f"{freq_cases['_stm32']} 100"
+
+
+def test_freq_arithmetic(freq_cases) -> None:
+    assert freq_cases["freq_1k"] == ok(frequency_hz=1000.0, duty_pct=25.0, edge_count=100)
+    assert freq_cases["freq_500"] == ok(frequency_hz=500.0, duty_pct=25.1, edge_count=50)
+    # 80 MHz / 78447 ticks = 1019.7968 Hz; 19612 / 78447 = 25.0003 %
+    assert freq_cases["freq_odd"] == ok(frequency_hz=1019.797, duty_pct=25.0, edge_count=102)
+
+
+def test_freq_no_signal_is_a_valid_measurement(freq_cases) -> None:
+    assert freq_cases["freq_nosig"] == ok(frequency_hz=None, duty_pct=None, edge_count=0)
+    assert freq_cases["freq_one"] == ok(frequency_hz=None, duty_pct=None, edge_count=1)
+
+
+def test_freq_rig_problems_are_errors(freq_cases) -> None:
+    pin = freq_cases["freq_pin"]
+    port, num = freq_cases["_stm32"].split()
+    overrun = Err("INTERNAL", "capture overrun: signal too fast to time every edge")
+    assert freq_cases["freq_overrun"] == format_response(overrun)
+    notimer = Err("BADPIN", f"no capture timer on P{port}{num} (pin {pin})")
+    assert freq_cases["freq_notimer"] == format_response(notimer)
+    assert freq_cases["freq_hw"] == format_response(Err("INTERNAL", "capture timer setup failed"))
+
+
+def test_freq_argument_checks(freq_cases) -> None:
+    bad_window = format_response(Err("BADARG", "window_ms must be 1-10000"))
+    for case in ("freq_win0", "freq_winbig", "freq_winsyntax"):
+        assert freq_cases[case] == bad_window, case
+    assert freq_cases["freq_winmax"].startswith("OK ")
+    assert freq_cases["freq_args"] == "ERR BADCMD FREQ takes 2 arguments, got 1"

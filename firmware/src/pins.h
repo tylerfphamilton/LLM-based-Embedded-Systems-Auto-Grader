@@ -26,6 +26,9 @@ const struct pin_def* pins_find(const char* name);
 // true if the pin is wired to a real STM32 pin
 bool pins_wired(const struct pin_def* p);
 
+// true if the pin map gives the pin the timer_capture capability
+bool pins_can_capture(const struct pin_def* p);
+
 // returns the Zephyr GPIO device for a port letter, or NULL if the port doesn't exist or isn't enabled
 const struct device* pins_port_device(char port);
 

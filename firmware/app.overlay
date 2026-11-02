@@ -8,8 +8,7 @@
  * here too, matching config/pinmap.yaml in the host repo.
  */
 
-/{ 
-
+/ {
     chosen {
         grader,host-uart = &usart2;
     };
@@ -17,4 +16,13 @@
 
 &usart2 {
     current-speed = <115200>;
+};
+
+/*
+ * TIM2 is the capture timer for FREQ (src/capture.c drives it directly with STM32 LL).
+ * The board file gives TIM2 to a PWM output on PB10; turn that off so nothing else
+ * claims the timer or its interrupt.
+ */
+&pwm2 {
+    status = "disabled";
 };

@@ -13,4 +13,6 @@ target_sources(app PRIVATE
     src/cmd.c
     src/reply.c
     src/pins.c
+    src/pins_table.c
+    src/capture.c
 )
