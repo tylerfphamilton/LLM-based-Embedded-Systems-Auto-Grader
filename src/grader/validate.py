@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from grader.pinmap import PinMap
+from grader.pinmap import RIG_ONLY_CAPS, PinMap
 from grader.plan import (
     PRIMITIVE_FIELDS,
     STIMULUS_TYPES,
@@ -57,6 +57,12 @@ class _Errors(list[str]):
 def _check_pin(errors: _Errors, where: str, role: str, pin: str, cap: str, pinmap: PinMap) -> None:
     if not pinmap.has(pin):
         errors.append(f"{where}: pin {pin} is not in the pin map.")
+    elif pinmap.caps(pin) & RIG_ONLY_CAPS:
+        rig_caps = ", ".join(sorted(pinmap.caps(pin) & RIG_ONLY_CAPS))
+        errors.append(
+            f"{where}: pin {pin} is reserved for the rig ({rig_caps}) and cannot be used "
+            "by a plan step."
+        )
     elif cap not in pinmap.caps(pin):
         have = ", ".join(sorted(pinmap.caps(pin))) or "none"
         errors.append(f"{where}: {role} pin {pin} lacks the '{cap}' capability (it has: {have}).")

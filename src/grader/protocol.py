@@ -1,4 +1,4 @@
-"""Host <-> measuring-board text protocol (draft v0.1, see docs/protocol.md).
+"""Host <-> measuring-board text protocol (draft v0.2, see docs/protocol.md).
 
 Both directions live here so the FakeDevice can parse exactly what the runner sends and
 answer in exactly the format the runner parses:
@@ -17,7 +17,7 @@ from typing import Any, ClassVar
 
 from grader import plan as p
 
-PROTOCOL_VERSION = "0.1"
+PROTOCOL_VERSION = "0.2"
 
 
 class ProtocolError(Exception):
@@ -206,6 +206,16 @@ class Command(ABC):
         for f in fields(self):
             out[f.name] = str(getattr(self, f.name)).lower()
         return out
+
+
+@dataclass(frozen=True)
+class Ping(Command):
+    """Handshake: firmware version, protocol version and pin-map hash."""
+
+    VERB = "PING"
+
+    def args(self) -> list[str]:
+        return []
 
 
 @dataclass(frozen=True)
@@ -430,6 +440,9 @@ def parse_command(line: str) -> Command:
     if not tokens:
         raise ProtocolError("empty command")
     verb, args = tokens[0].upper(), tokens[1:]
+    if verb == "PING":
+        _arity(args, 0, "PING")
+        return Ping()
     if verb == "RESET":
         _arity(args, 0, "RESET")
         return Reset()

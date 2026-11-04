@@ -328,3 +328,95 @@ candidates if it has to shrink: inline `FEEDBACK_TOOL_DEF` as compact JSON, and 
 6. That the placeholder sketches compile (D42).
 The two `@pytest.mark.live` tests cover items 1, 3 and part of 4 once a key and a model
 are set.
+
+## Firmware step 1: PING handshake, pin table, reply builder
+
+**D48. Pin-map hash details.** Lines are sorted with Python's default string order (by
+code point, so `D13` comes before `D2`), and the `stm32` value is used exactly as written,
+including `TBD`. Wiring a `TBD` pin therefore changes the hash, which is intended: the
+firmware must be rebuilt. The firmware never computes the hash. It embeds the value that
+`scripts/gen_pins_h.py` computed with the host's own `pinmap_hash`, so the two cannot
+drift apart.
+
+**D49. Rig-only pins are marked by capability, not by name.** `pinmap.RIG_ONLY_CAPS =
+{"reset"}`. `validate._check_pin` rejects any step whose pin has a rig-only capability,
+with its own message ("pin RST is reserved for the rig (reset) and cannot be used by a
+plan step."), before the usual "lacks the '…' capability" check. No step type needs
+`reset`, so the normal capability check would reject `RST` anyway; the explicit message
+is clearer for people and for the LLM repair loop. Nothing in Python names `RST`.
+
+**D50. Handshake outcomes.**
+* The connect `PING` goes through the normal request path, so a timeout triggers a resync.
+  If the resync `PING` is answered, the host sends `PING` once more to get the fields: the
+  ST-Link can lose the first bytes after the port opens. If the board never answers, or
+  answers `ERR`, every check is `ERROR` and nothing is flashed.
+* `protocol` must equal `PROTOCOL_VERSION` exactly (string compare). A missing `protocol`
+  counts as a mismatch. A missing `pinmap` is only a warning.
+* When the handshake blocks grading, `report.flash` is `ok=false, stage="skipped"`.
+* Warnings go in a new `Report.rig_warnings` list, not in `rig_faults`. A warning is not a
+  fault, and the end-to-end rule-3 check reads `rig_faults`.
+* A successful handshake is logged only in the command log (the `PING` line, its reply
+  and a `handshake: {...}` note). `rig_faults` gets handshake *failures* and every resync
+  (a resync always follows a timeout, which is a fault). The brief's "log every handshake
+  and resync in … `rig_faults`" is read this way so that a normal run has no faults, and so
+  that the existing scenarios' `rig_faults` (for example the two in
+  `button/rig_stimulus_fault`) do not change.
+
+**D51. A dead board stops the run.** `RigClient.alive` goes false when a resync `PING`
+is not answered. After that, `RigClient.request` raises without sending anything. That
+covers the rest of a concurrent group already in progress. `_execute` then stops and
+marks every check not measured yet `ERROR` with "rig error: the measuring board stopped
+responding". Setup (`RESET`/boot `WAIT`) keeps D17's rule: if it fails, every check is
+`ERROR`.
+
+**D52. FakeRig handshake knobs.**
+* `FakeDevice(..., pinmap_hash=...)` sets the `pinmap` it reports. `grade_scenario` passes
+  the hash of the run's pin map. If it is not given (None), the field is left out, like
+  older firmware, so a forgotten caller gets a warning, not a false mismatch.
+* Scenario `ping:` overrides fields (`fw`, `protocol`, `pinmap`) or makes `PING` fail
+  (`error` / `silent: true`). A field set to `null` is left out of the reply. The fields
+  default to `fw="fake"`, the host's protocol version and the device's hash.
+* `fail_command` rules got `after: N`: the first N matching commands are answered
+  normally. This is needed to test "answers the connect `PING`, then stops responding". It
+  is a general knob, not specific to `PING`.
+
+**D53. Generated pin table layout.**
+* `CAP_<NAME>` bit n is the capability's position in the `Capability` literal. **Add new
+  capabilities at the end**; inserting one in the middle renumbers the bits (harmless
+  after regenerating, but noisy in diffs).
+* `struct pin_def` is defined in `pins.h`, which is plain C and forward-declares
+  `struct device`. Only `pins.c` includes `pins_gen.h`, because the `static` table would
+  otherwise be copied into every file and trigger unused-variable warnings. `pins.c`
+  exports `pins_map_hash[]` for `cmd_ping`.
+* The `stm32` parser accepts `P<A–K><0–15>`. Anything else (`TBD`, typos) means "not
+  wired" (port `0`). `pins_port_device` covers the ports on the L476RG's LQFP64 package
+  (A, B, C, D, H), each behind `DT_NODE_HAS_STATUS(…, okay)`.
+* The shared-EXTI warning goes to stderr and does not change the exit code, including
+  with `--check`.
+
+**D54. Reply builder details.**
+* `struct reply_buf` has one field more than the brief listed: `truncated`. It keeps
+  `truncated=1` to once per line (a duplicate key would be a protocol error) when two
+  lists are cut.
+* Numbers are formatted by hand from integers. No `printf` is used, because 64-bit
+  `%lld` support depends on the Zephyr libc configuration. `reply_fixed` drops trailing
+  zeros but keeps one decimal, so its output equals Python's `repr(float)` for the same
+  value as long as 1e-4 ≤ |x| < 1e16. Outside that range Python switches to exponent
+  form while the firmware keeps plain decimals. Both forms are valid protocol, and the PC
+  test stays inside the range. `decimals` is clamped to 0–18.
+* `reply_err` cuts the message to fit the line. `cmd.c`'s message buffer `REPLY_MAX`
+  dropped from 1100 to 128, because it now holds only the message part. That saves about
+  1 KB of the 4 KB main stack, which `cmd_ping`'s `reply_buf` now uses.
+* `cmd.c` turned out to be plain C, so the PC harness links the real `cmd.c` and tests
+  `PING` and the `BADCMD` replies end to end. The harness defines `pins_map_hash` itself,
+  because `pins.c` is Zephyr code.
+
+**D55. Ruff clean-up outside the brief's list.** `ruff check` was already failing before
+this step: the same kind of commented-out old copy as in `transport.py` (195 lines at the
+top of `tests/test_fake_rig.py`) and missing final newlines in that file and in
+`scripts/rig_check.py`. I removed the commented-out block (git history keeps it) and added
+the newlines, so the brief's "ruff stays clean" can hold.
+
+**D56. `rig_check.py` always sends `PING` first.** Extra requests on the command line
+follow it, and the default request list is now empty. The exit code is 1 if `protocol` or
+`pinmap` mismatch. A missing `pinmap` only prints a warning.

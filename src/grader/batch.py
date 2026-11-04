@@ -15,7 +15,7 @@ from grader.clock import FakeClock
 from grader.fake_rig import FakeDevice, Scenario, load_scenario
 from grader.feedback import FeedbackGenerator
 from grader.flasher import NoopFlasher, Submission
-from grader.pinmap import PinMap
+from grader.pinmap import PinMap, pinmap_hash
 from grader.plan import Plan
 from grader.report import Report, write_reports
 from grader.rig_profile import RigProfile
@@ -44,7 +44,7 @@ def grade_scenario(
             f"not {plan.assignment!r}"
         )
     clock = FakeClock(start=datetime.now(UTC))  # real start stamp, simulated elapsed time
-    transport = FakeTransport(FakeDevice(scenario, clock))
+    transport = FakeTransport(FakeDevice(scenario, clock, pinmap_hash=pinmap_hash(pinmap)))
     return run(
         plan,
         Submission(scenario.submission, repo_root / scenario.sketch if scenario.sketch else None),

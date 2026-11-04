@@ -11,7 +11,7 @@ from grader.clock import Clock, SystemClock
 from grader.compare import Measurement, Outcome, Verdict, compare, describe, tolerance
 from grader.feedback import FeedbackGenerator, FeedbackResult, NullFeedback
 from grader.flasher import Flasher, FlashResult, Submission
-from grader.pinmap import PinMap
+from grader.pinmap import PinMap, pinmap_hash
 from grader.plan import (
     ApproxExpectation,
     MeasureBase,
@@ -23,12 +23,14 @@ from grader.plan import (
     is_measure,
 )
 from grader.protocol import (
+    PROTOCOL_VERSION,
     Arm,
     Collect,
     Command,
     Debug,
     Err,
     Ok,
+    Ping,
     ProtocolError,
     Reset,
     Wait,
@@ -37,7 +39,7 @@ from grader.protocol import (
 )
 from grader.report import CheckResult, FlashInfo, LogEntry, Report, RigInfo, summarize
 from grader.rig_profile import RigProfile
-from grader.transport import Transport, TransportError
+from grader.transport import Transport, TransportError, TransportTimeout
 from grader.validate import validate_plan
 
 MAX_DEBUG_LINES = 200  # per reply; protects against a board that only chatters
@@ -47,12 +49,21 @@ class RigFault(Exception):
     """The rig did not produce a valid result (ERR reply, timeout, malformed line)."""
 
 
+STOPPED = "the measuring board stopped responding"
+
+
 class RigClient:
-    """Sends commands, reads exactly one reply each, and logs everything."""
+    """Sends commands, reads exactly one reply each, and logs everything.
+
+    After a timeout it drains stale input and sends one ``PING``. If that goes unanswered
+    the board is considered dead (``alive`` is False) and no further command is sent.
+    """
 
     def __init__(self, transport: Transport, profile: RigProfile, clock: Clock):
         self.transport, self.profile, self.clock = transport, profile, clock
         self.log: list[LogEntry] = []
+        self.faults: list[str] = []
+        self.alive = True
         self._t0 = clock.monotonic()
 
     def note(self, direction: str, line: str) -> None:
@@ -60,6 +71,27 @@ class RigClient:
         self.log.append(LogEntry(t_ms=t_ms, dir=direction, line=line))  # type: ignore[arg-type]
 
     def request(self, cmd: Command, duration_ms: float | None = None) -> Ok:
+        if not self.alive:
+            raise RigFault(f"{cmd.to_line()} -> not sent: {STOPPED}")
+        try:
+            return self._exchange(cmd, duration_ms)
+        except TransportTimeout as exc:
+            self._resync(cmd.to_line())
+            raise RigFault(f"{cmd.to_line()} -> {exc}") from None
+
+    def _resync(self, after: str) -> None:
+        self.transport.drain()
+        try:
+            self._exchange(Ping())
+        except (TransportError, RigFault) as exc:
+            self.alive = False
+            self.faults.append(f"resync after timeout on '{after}' failed ({exc}); {STOPPED}")
+        else:
+            self.faults.append(f"resync after timeout on '{after}': the board answered PING")
+        self.note("note", self.faults[-1])
+
+    def _exchange(self, cmd: Command, duration_ms: float | None = None) -> Ok:
+        """One request/reply. TransportTimeout propagates; other failures are RigFault."""
         line = cmd.to_line()
         dur = cmd.duration_ms() if duration_ms is None else duration_ms
         timeout_s = (
@@ -79,6 +111,8 @@ class RigClient:
                     raise RigFault(f"{line} -> ERR {resp.code} {resp.message}".rstrip())
                 return resp
             raise RigFault(f"{line} -> more than {MAX_DEBUG_LINES} debug lines, no reply")
+        except TransportTimeout:
+            raise
         except TransportError as exc:
             raise RigFault(f"{line} -> {exc}") from None
         except ProtocolError as exc:
@@ -137,11 +171,52 @@ def _all_checks(plan: Plan, verdict: Verdict, reason: str) -> list[CheckResult]:
     return out
 
 
+def handshake(rig: RigClient, pinmap: PinMap) -> tuple[str | None, str | None]:
+    """PING the board on connect. Returns (problem, warning); a problem means don't grade."""
+    host_hash = pinmap_hash(pinmap)
+    try:
+        fields = rig.request(Ping()).fields
+    except RigFault as exc:
+        if not rig.alive:
+            return f"the measuring board did not answer PING: {exc}", None
+        # A timeout was followed by a successful resync PING: ask once more for the fields.
+        try:
+            fields = rig.request(Ping()).fields
+        except RigFault as exc2:
+            return f"the measuring board did not answer PING: {exc2}", None
+    rig.note("note", f"handshake: {fields}")
+    protocol, fw_hash = fields.get("protocol"), fields.get("pinmap")
+    if protocol != PROTOCOL_VERSION:
+        return (
+            f"measuring-board firmware speaks protocol {protocol}, the host speaks "
+            f"{PROTOCOL_VERSION}; reflash the firmware",
+            None,
+        )
+    if fw_hash is None:
+        return None, (
+            "measuring-board firmware did not report a pin-map hash (older firmware?), so "
+            f"its pin map cannot be checked against the host's ({host_hash})"
+        )
+    if fw_hash != host_hash:
+        return (
+            f"measuring-board firmware pin map {fw_hash} does not match the host's pin map "
+            f"{host_hash}; reflash the firmware",
+            None,
+        )
+    return None, None
+
+
 def _execute(plan: Plan, rig: RigClient, faults: list[str]) -> list[CheckResult]:
     checks: list[CheckResult] = []
     steps = plan.steps
     i = 0
     while i < len(steps):
+        if not rig.alive:
+            # The board is gone: every check that was not measured yet is a rig error.
+            for step in steps[i:]:
+                if is_measure(step):
+                    checks += _checks_for(step, Measurement.rig_error(STOPPED), rig.profile)
+            break
         step = steps[i]
         if is_measure(step) and step.concurrent_with_next:
             # Arm every consecutive concurrent measure, run the stimulus, then collect.
@@ -215,10 +290,20 @@ def run(
     clock = clock or SystemClock()
     started = clock.wall().isoformat()
     rig = RigClient(transport, rig_profile, clock)
-    faults: list[str] = []
+    faults = rig.faults
 
-    flash: FlashResult = flasher.flash(submission)
-    if not flash.ok:
+    # Handshake before flashing: with the wrong firmware nothing measured would be valid.
+    problem, warning = handshake(rig, pinmap)
+    warnings = [warning] if warning else []
+    if problem is None:
+        flash: FlashResult = flasher.flash(submission)
+    else:
+        flash = FlashResult(False, "skipped", "not flashed: the rig handshake failed")
+    if problem is not None:
+        faults.append(problem)
+        rig.note("note", problem)
+        checks = _all_checks(plan, Verdict.ERROR, f"rig error: {problem}")
+    elif not flash.ok:
         if flash.student_fault:
             checks = _all_checks(plan, Verdict.FAIL, "the sketch did not compile")
         else:
@@ -268,6 +353,7 @@ def run(
         ),
         assumptions=plan.assumptions,
         rig_faults=faults,
+        rig_warnings=warnings,
         plan_warnings=list(plan_warnings or []),
         llm=fb.llm,
         llm_raw=fb.raw,

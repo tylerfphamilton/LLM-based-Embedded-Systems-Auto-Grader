@@ -142,20 +142,47 @@ def test_example_scenarios_load(path: Path) -> None:
 
 
 class FakeSerial:
+    """Mimics pyserial. Like the ST-Link on Windows, changing `timeout` on the open port
+    resets the link and drops whatever is in flight."""
+
     def __init__(self, port: str, baudrate: int, timeout: float):
-        self.port, self.baudrate, self.timeout = port, baudrate, timeout
+        self.port, self.baudrate, self._timeout = port, baudrate, timeout
+        self.timeout_changes = 0
         self.written = b""
-        self.incoming = [b"# booting\r\n", b"OK frequency_hz=1000.0\r\n", b"OK partial"]
+        self.stale = b"garbage from before the port was opened\n"
+        # Each chunk becomes readable on a later read() call, like bytes trickling in.
+        self.chunks = [b"# boot", b"ing\r\n", b"OK frequency_hz=1000.0\r", b"\nOK partial"]
+        self.flushed_input = False
         self.closed = False
+
+    @property
+    def timeout(self) -> float:
+        return self._timeout
+
+    @timeout.setter
+    def timeout(self, value: float) -> None:
+        self.timeout_changes += 1
+        self.chunks.clear()  # the link reset loses everything in flight
+
+    @property
+    def in_waiting(self) -> int:
+        return len(self.stale)
+
+    def reset_input_buffer(self) -> None:
+        self.stale = b""
+        self.flushed_input = True
+
+    def read(self, n: int) -> bytes:
+        if self.stale:
+            data, self.stale = self.stale[:n], self.stale[n:]
+            return data
+        return self.chunks.pop(0) if self.chunks else b""
 
     def write(self, data: bytes) -> None:
         self.written += data
 
     def flush(self) -> None:
         pass
-
-    def readline(self) -> bytes:
-        return self.incoming.pop(0) if self.incoming else b""
 
     def close(self) -> None:
         self.closed = True
@@ -167,22 +194,42 @@ def test_serial_transport_with_mocked_port() -> None:
         SimpleNamespace(device="COM7", vid=STLINK_VID),
     ]
     made: list[FakeSerial] = []
+    now = [0.0]
 
     def factory(*a, **k) -> FakeSerial:
         made.append(FakeSerial(*a, **k))
         return made[-1]
 
-    t = SerialTransport(serial_factory=factory, port_lister=lambda: ports)
+    def clock() -> float:
+        now[0] += 0.05  # each poll costs one port timeout
+        return now[0]
+
+    t = SerialTransport(serial_factory=factory, port_lister=lambda: ports, monotonic=clock)
     assert t.port == "COM7" and t.describe() == "serial:COM7"
+    assert made[0].flushed_input  # stale bytes from before open are discarded
     t.send_line("FREQ D5 100")
     assert made[0].written == b"FREQ D5 100\n"
-    assert t.read_line(2.0) == "# booting"
-    assert t.read_line(2.0) == "OK frequency_hz=1000.0"
-    assert made[0].timeout == 2.0
-    with pytest.raises(TransportTimeout):
-        t.read_line(0.1)  # no newline -> incomplete line
+    assert t.read_line(2.0) == "# booting"  # assembled from two chunks
+    assert t.read_line(2.0) == "OK frequency_hz=1000.0"  # "\r" and "\n" in separate chunks
+    with pytest.raises(TransportTimeout, match="OK partial"):
+        t.read_line(0.5)  # no newline -> incomplete line, reported with what arrived
+    assert made[0].timeout_changes == 0  # never touch the timeout of the open port
     t.close()
     assert made[0].closed
+
+
+def test_serial_transport_drain_discards_pending_input() -> None:
+    made: list[FakeSerial] = []
+
+    def factory(*a, **k) -> FakeSerial:
+        made.append(FakeSerial(*a, **k))
+        return made[-1]
+
+    t = SerialTransport("COM7", serial_factory=factory, monotonic=lambda: 0.0)
+    t._buf = b"half a stale li"
+    made[0].flushed_input = False
+    t.drain()
+    assert made[0].flushed_input and t._buf == b""
 
 
 def test_find_port_errors() -> None:
