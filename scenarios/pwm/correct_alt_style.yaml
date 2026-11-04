@@ -1,5 +1,6 @@
 submission: pwm_correct_alt_style
 assignment: pwm_1khz
+sketch: benchmark/pwm_1khz/correct_alt_style
 description: Correct, but uses a different timer setup, so the frequency is slightly off nominal while still well inside tolerance.
 ground_truth: { faulty: false }
 noise: { seed: 7, fields: { frequency_hz: { pct: 0.05 }, duty_pct: { abs: 0.1 } } }

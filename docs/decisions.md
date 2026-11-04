@@ -420,3 +420,26 @@ the newlines, so the brief's "ruff stays clean" can hold.
 **D56. `rig_check.py` always sends `PING` first.** Extra requests on the command line
 follow it, and the default request list is now empty. The exit code is 1 if `protocol` or
 `pinmap` mismatch. A missing `pinmap` only prints a warning.
+
+**D57. Batches of real sketch folders (`grader batch --rig serial`).**
+* A submission is an immediate subfolder `X` with `X/X.ino`; ground truth for metrics lives
+  in `labels.yaml` next to them (same `GroundTruth` model as scenarios) and is read only
+  after grading.
+* One `SerialTransport` for the whole batch. An exception while grading one submission
+  becomes a row with every check counted as ERROR (`BatchRow.error` holds the message) and
+  the batch goes on. A failed handshake (flash stage `skipped`) means the rig is dead: the
+  batch stops. `summary.csv` is written in a `finally`, so a stop or Ctrl+C leaves a
+  partial summary.
+* `--flash-only` compiles and uploads only, writes `flash_summary.csv`, and refuses
+  `--feedback llm` because nothing is graded. `--rig serial` refuses `--scenarios` and
+  `--rig fake` refuses `--submissions` instead of silently ignoring them.
+* `ArduinoCliFlasher` waits after a successful upload for an Arduino USB port (VID
+  `0x2341`, polled every 0.2 s for up to 10 s), then `settle_s` = 1 s, so the runner's
+  `RESET` does not double-reset the Nano into its bootloader. A port that never returns is
+  an upload (rig) failure, not a student fault. This checks for *any* Arduino port, not the
+  same port name, because Windows may renumber it.
+* `summary.csv` gains `elapsed_s` (wall clock per submission, `time.monotonic()`, also for
+  fake batches, where it is about 0).
+* The benchmark sketches no longer name their fault (`test_scenario_sketch_links_exist`
+  now checks this), so the LLM cannot read the answer from a comment.
+* `tests/firmware/test_reply_c.py` was missing its final newline (as in D55), so I added it to keep `ruff check` clean.

@@ -1,7 +1,5 @@
-// PLACEHOLDER for the real benchmark: a minimal stand-in so LLM feedback has code to read.
-// Scenario: scenarios/pwm/wrong_pin.yaml. Planted bug: the PWM is on D6 instead of D5,
-// so D5 shows no signal at all.
 // Target: Arduino Nano 33 BLE Sense, Arduino mbed core (arduino:mbed_nano:nano33ble).
+// 1 kHz, 25% duty PWM on D5 using the nRF52840 hardware PWM through mbed::PwmOut.
 
 #include "mbed.h"
 

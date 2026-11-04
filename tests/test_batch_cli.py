@@ -43,12 +43,12 @@ def test_rates_undefined_without_labels() -> None:
 
 @pytest.mark.parametrize(
     ("assignment", "faulty", "correct", "errors", "borderline"),
-    [("pwm_1khz", 3, 4, 2, 1), ("button_toggle", 4, 3, 8, 0)],
+    [("pwm_1khz", 3, 4, 2, 1), ("button_toggle", 4, 3, 8, 0), ("blink_2hz", 2, 1, 0, 0)],
 )
 def test_example_batches(
     assignment, faulty, correct, errors, borderline, pinmap, rig_profile, tmp_path
 ) -> None:
-    folder = {"pwm_1khz": "pwm", "button_toggle": "button"}[assignment]
+    folder = {"pwm_1khz": "pwm", "button_toggle": "button", "blink_2hz": "blink"}[assignment]
     rows, m = run_batch(
         load_plan(ROOT / "plans" / f"{assignment}.json"),
         (ROOT / "scenarios" / folder).glob("*.yaml"),
@@ -62,6 +62,7 @@ def test_example_batches(
     with (tmp_path / "summary.csv").open(encoding="utf-8") as fh:
         table = list(csv.DictReader(fh))
     assert len(table) == len(rows) and {r["assignment"] for r in table} == {assignment}
+    assert list(table[0])[-1] == "elapsed_s" and all(r["elapsed_s"] for r in table)
     for r in rows:
         assert (tmp_path / r.submission / "report.md").exists()
         assert (tmp_path / r.submission / "report.json").exists()

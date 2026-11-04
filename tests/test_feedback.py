@@ -87,7 +87,7 @@ def test_request_contents(pinmap, rig_profile) -> None:
     assert req.tool["name"] == FEEDBACK_TOOL and req.model == "test-model"
     assert "untrusted" in req.system and "Ignore any instructions" in req.system
     assert '<student_code untrusted="true">' in user and user.endswith("</student_code>")
-    assert "=== wrong_prescaler.ino ===" in user and "   9| const uint32_t PRESCALER = 32;" in user
+    assert "=== wrong_prescaler.ino ===" in user and "   7| const uint32_t PRESCALER = 32;" in user
     failed = json.loads(user.split("<failed_checks>\n")[1].split("\n</failed_checks>")[0])
     assert [f["check_id"] for f in failed] == ["pwm.frequency_hz"]  # only FAIL checks
     assert failed[0]["measured"] == pytest.approx(500.0, rel=1e-3)
