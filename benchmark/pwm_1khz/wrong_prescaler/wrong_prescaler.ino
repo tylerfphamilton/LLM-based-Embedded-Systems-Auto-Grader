@@ -1,7 +1,5 @@
-// PLACEHOLDER for the real benchmark: a minimal stand-in so LLM feedback has code to read.
-// Scenario: scenarios/pwm/wrong_prescaler.yaml. Planted bug: the prescaler is twice too
-// large, so the period is 2 ms and D5 runs at 500 Hz (duty is still 25%).
 // Target: Arduino Nano 33 BLE Sense, Arduino mbed core (arduino:mbed_nano:nano33ble).
+// 1 kHz, 25% duty PWM on D5 using the nRF52840 hardware PWM through mbed::PwmOut.
 
 #include "mbed.h"
 

@@ -1,5 +1,6 @@
 submission: pwm_borderline
 assignment: pwm_1khz
+sketch: benchmark/pwm_1khz/borderline
 description: >
   Frequency 1019.8 Hz is inside the ±2% band (980–1020 Hz), but within the rig's
   measurement error (0.05% ≈ 0.51 Hz) of the edge, so the grader cannot be sure.

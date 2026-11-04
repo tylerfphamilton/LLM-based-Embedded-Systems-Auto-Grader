@@ -210,12 +210,6 @@ def _run_serial(
     from grader.runner import run as run_plan
     from grader.transport import SerialTransport, TransportError
 
-    typer.secho(
-        "WARNING: --rig serial is UNTESTED ON HARDWARE (SerialTransport + ArduinoCliFlasher). "
-        "The firmware protocol is still a draft.",
-        fg=typer.colors.YELLOW,
-        err=True,
-    )
     if sketch is None:
         raise typer.BadParameter("--rig serial needs --sketch", param_hint="--sketch")
     sub = Submission(submission or sketch.name, sketch)
@@ -240,21 +234,49 @@ def _run_serial(
 @app.command()
 def batch(
     plan: Annotated[Path, typer.Option(help="Plan JSON file.")],
-    scenarios: Annotated[Path, typer.Option(help="Directory of scenario YAML files.")],
+    scenarios: Annotated[
+        Path | None, typer.Option(help="Directory of scenario YAML files (fake rig).")
+    ] = None,
+    submissions: Annotated[
+        Path | None,
+        typer.Option(help="Directory of sketch folders X/X.ino, plus labels.yaml (serial rig)."),
+    ] = None,
+    rig: Annotated[Rig, typer.Option(help="fake (scenarios) or serial (hardware).")] = Rig.fake,
+    port: Annotated[str | None, typer.Option(help="Measuring-board port (serial).")] = None,
+    board_port: Annotated[str | None, typer.Option(help="Student-board port (serial).")] = None,
+    flash_only: Annotated[
+        bool, typer.Option(help="Serial only: compile and upload each sketch, no measuring.")
+    ] = False,
     out: Annotated[Path, typer.Option(help="Output directory.")] = Path("out"),
     pinmap: PinmapOpt = DEFAULT_PINMAP,
     profile: ProfileOpt = DEFAULT_PROFILE,
     feedback: FeedbackOpt = FeedbackKind.none,
     llm_config: LLMConfigOpt = DEFAULT_LLM_CONFIG,
 ) -> None:
-    """Grade every scenario in a directory (fake rig) and print benchmark metrics."""
+    """Grade every scenario (fake rig) or sketch folder (serial rig); print benchmark metrics."""
+    folder = _batch_folder_or_exit(rig, scenarios, submissions, flash_only, feedback)
     p = _load_plan_or_exit(plan, pinmap)
+    if rig is Rig.serial:
+        _serial_batch(
+            p,
+            plan,
+            folder,
+            port,
+            board_port,
+            flash_only,
+            out,
+            pinmap,
+            profile,
+            feedback,
+            llm_config,
+        )
+        return
     fb = _feedback_or_exit(feedback, llm_config)
     cost = load_llm_config(llm_config).cost_usd if fb is not None else None
     warnings = _plan_warnings(plan)
-    paths = sorted(scenarios.glob("*.yaml")) + sorted(scenarios.glob("*.yml"))
+    paths = sorted(folder.glob("*.yaml")) + sorted(folder.glob("*.yml"))
     if not paths:
-        typer.echo(f"error: no scenario files in {scenarios}", err=True)
+        typer.echo(f"error: no scenario files in {folder}", err=True)
         raise typer.Exit(2)
     try:
         rows, metrics = run_batch(
@@ -274,6 +296,94 @@ def batch(
     typer.echo(format_table(rows, metrics))
     md = out / "<submission>" / "report.md"
     typer.echo(f"\nreports: {md}   summary: {out / 'summary.csv'}")
+
+
+def _batch_folder_or_exit(rig, scenarios, submissions, flash_only, feedback) -> Path:
+    """Check the option combination for ``batch``; return the folder to read."""
+
+    def bad(problem: str):
+        typer.echo(f"error: {problem}", err=True)
+        raise typer.Exit(2)
+
+    if rig is Rig.fake:
+        if flash_only:
+            bad("--flash-only needs --rig serial")
+        if submissions is not None:
+            bad("--submissions needs --rig serial (the fake rig reads --scenarios)")
+        if scenarios is None:
+            bad("--rig fake needs --scenarios")
+        folder = scenarios
+    else:
+        if scenarios is not None:
+            bad("--rig serial reads --submissions, not --scenarios")
+        if submissions is None:
+            bad("--rig serial needs --submissions")
+        if flash_only and feedback is FeedbackKind.llm:
+            bad("--flash-only does not grade, so it cannot use --feedback llm")
+        folder = submissions
+    if not folder.is_dir():
+        bad(f"{folder} is not a directory")
+    return folder
+
+
+def _serial_batch(
+    p, plan_path, folder, port, board_port, flash_only, out, pinmap, profile, feedback, llm_config
+) -> None:
+    from grader.batch import (
+        discover_submissions,
+        flash_only_batch,
+        format_flash_table,
+        load_labels,
+        run_serial_batch,
+    )
+    from grader.flasher import ArduinoCliFlasher
+    from grader.transport import SerialTransport, TransportError
+
+    subs = discover_submissions(folder)
+    if not subs:
+        typer.echo(f"error: no sketch folders (X/X.ino) in {folder}", err=True)
+        raise typer.Exit(2)
+    labels = load_labels(folder)
+    flasher = ArduinoCliFlasher(port=board_port)
+    if flash_only:
+        rows = flash_only_batch(subs, labels, flasher=flasher, out_dir=out)
+        typer.echo("\n" + format_flash_table(rows))
+        logs = out / "<submission>" / "flash.log"
+        typer.echo(f"\nlogs: {logs}   summary: {out / 'flash_summary.csv'}")
+        return
+    fb = _feedback_or_exit(feedback, llm_config)
+    cost = load_llm_config(llm_config).cost_usd if fb is not None else None
+    warnings = _plan_warnings(plan_path)
+    try:
+        transport = SerialTransport(port)
+    except (TransportError, ImportError) as exc:
+        typer.echo(f"error: cannot open measuring board: {exc}", err=True)
+        raise typer.Exit(2) from None
+    try:
+        with transport:
+            rows, metrics, stopped = run_serial_batch(
+                p,
+                subs,
+                labels,
+                transport=transport,
+                flasher=flasher,
+                pinmap=load_pinmap(pinmap),
+                rig_profile=load_rig_profile(profile),
+                out_dir=out,
+                feedback=fb,
+                plan_warnings=warnings,
+                cost_usd=cost,
+            )
+    except KeyboardInterrupt:
+        typer.echo(f"\ninterrupted; partial summary: {out / 'summary.csv'}", err=True)
+        raise typer.Exit(130) from None
+    typer.echo(f"Plan: {p.assignment}  ({len(rows)} of {len(subs)} submissions)\n")
+    typer.echo(format_table(rows, metrics))
+    md = out / "<submission>" / "report.md"
+    typer.echo(f"\nreports: {md}   summary: {out / 'summary.csv'}")
+    if stopped:
+        typer.echo(f"error: {stopped}", err=True)
+        raise typer.Exit(1)
 
 
 @app.command("make-plan")

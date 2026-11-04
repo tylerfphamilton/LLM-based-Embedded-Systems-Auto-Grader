@@ -1,7 +1,5 @@
-// PLACEHOLDER for the real benchmark: a minimal stand-in so LLM feedback has code to read.
-// Scenario: scenarios/pwm/wrong_duty.yaml. Planted bug: the compare value is set to half
-// the period, so the duty cycle is 50% instead of 25% (frequency is correct).
 // Target: Arduino Nano 33 BLE Sense, Arduino mbed core (arduino:mbed_nano:nano33ble).
+// 1 kHz, 25% duty PWM on D5 using the nRF52840 hardware PWM through mbed::PwmOut.
 
 #include "mbed.h"
 

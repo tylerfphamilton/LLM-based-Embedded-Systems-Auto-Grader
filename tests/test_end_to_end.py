@@ -188,7 +188,7 @@ def test_arduino_cli_flasher_success_and_failures(tmp_path: Path) -> None:
         return SimpleNamespace(returncode=codes[args[1]], stdout=f"{args[1]} ok\n", stderr="")
 
     ports = [SimpleNamespace(device="/dev/ttyACM1", vid=ARDUINO_VID)]
-    fl = ArduinoCliFlasher(run=fake_run, port_lister=lambda: ports)
+    fl = ArduinoCliFlasher(run=fake_run, port_lister=lambda: ports, sleep=lambda s: None)
     sub = Submission("s", tmp_path)
 
     res = fl.flash(sub)
@@ -226,4 +226,6 @@ def test_scenario_sketch_links_exist(path: Path) -> None:
     sketch_dir = ROOT / scenario.sketch
     ino = sketch_dir / f"{sketch_dir.name}.ino"  # arduino-cli needs <dir>/<dir>.ino
     assert ino.is_file(), ino
-    assert "PLACEHOLDER" in ino.read_text(encoding="utf-8")
+    text = ino.read_text(encoding="utf-8")
+    for hint in ("PLACEHOLDER", "Scenario:", "Planted bug"):  # the LLM must not be told
+        assert hint not in text, f"{ino} still names its fault ({hint!r})"

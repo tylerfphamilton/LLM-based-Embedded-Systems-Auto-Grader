@@ -1,0 +1,7 @@
+# Ground truth for benchmark metrics only. The grader and the LLM never see this file.
+correct:           { faulty: false }
+correct_alt_style: { faulty: false }
+borderline:        { faulty: false }
+wrong_duty:        { faulty: true, fault: wrong_duty }
+wrong_pin:         { faulty: true, fault: wrong_pin }
+wrong_prescaler:   { faulty: true, fault: wrong_prescaler }
