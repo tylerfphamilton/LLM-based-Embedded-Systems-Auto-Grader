@@ -5,3 +5,4 @@ borderline:        { faulty: false }
 wrong_duty:        { faulty: true, fault: wrong_duty }
 wrong_pin:         { faulty: true, fault: wrong_pin }
 wrong_prescaler:   { faulty: true, fault: wrong_prescaler }
+broken:            { faulty: true, fault: compiler_error}
