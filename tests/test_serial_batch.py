@@ -26,6 +26,19 @@ from grader.plan import load_plan
 from grader.transport import ARDUINO_VID, FakeTransport
 
 ROOT = Path(__file__).resolve().parent.parent
+PWM_BENCH = ROOT / "benchmark" / "pwm_1khz"
+
+
+def _n_bench() -> int:
+    """Number of sketch folders in the PWM benchmark (grows as sketches are added)."""
+    return len(discover_submissions(PWM_BENCH))
+
+
+def _n_bench_faulty() -> int:
+    """Number of benchmark sketches labelled faulty in labels.yaml."""
+    return sum(gt.faulty for gt in load_labels(PWM_BENCH).values())
+
+
 PLAN = ROOT / "plans" / "pwm_1khz.json"
 runner = CliRunner()
 
@@ -108,7 +121,7 @@ def test_load_labels(tmp_path: Path, capsys) -> None:
 def test_benchmark_folder_is_complete() -> None:
     folder = ROOT / "benchmark" / "pwm_1khz"
     ids = [s.id for s in discover_submissions(folder)]
-    assert sorted(load_labels(folder)) == ids and len(ids) == 6
+    assert sorted(load_labels(folder)) == ids and len(ids) >= 6  # every folder is labelled
 
 
 # ------------------------------------------------------------------------- serial batch
@@ -257,8 +270,9 @@ def test_cli_serial_batch_opens_one_transport(tmp_path, pinmap, monkeypatch) -> 
     )  # fmt: skip
     assert res.exit_code == 0, res.output
     assert opened == ["COM9"]
-    assert flasher.flashed == sorted(flasher.flashed) and len(flasher.flashed) == 6
-    assert "Bug detection rate : 0.0%  (0/3" in res.output  # the fake rig passes everything
+    assert flasher.flashed == sorted(flasher.flashed) and len(flasher.flashed) == _n_bench()
+    # the fake rig passes everything, so every faulty sketch is a missed bug
+    assert f"Bug detection rate : 0.0%  (0/{_n_bench_faulty()}" in res.output
 
 
 def test_cli_flash_only_creates_no_transport(tmp_path, monkeypatch) -> None:
@@ -276,8 +290,8 @@ def test_cli_flash_only_creates_no_transport(tmp_path, monkeypatch) -> None:
         "--out", str(tmp_path),
     )  # fmt: skip
     assert res.exit_code == 0, res.output
-    assert "6 ok / 0 failed" in res.output
-    assert len(_read_csv(tmp_path / "flash_summary.csv")) == 6
+    assert f"{_n_bench()} ok / 0 failed" in res.output
+    assert len(_read_csv(tmp_path / "flash_summary.csv")) == _n_bench()
 
 
 # ------------------------------------------------------------------- flasher port wait
