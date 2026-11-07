@@ -33,8 +33,7 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
 | Request | Meaning | Reply fields |
 |---|---|---|
 | `PING` | Handshake: is the board answering, and with which firmware? See below | `fw`, `protocol`, `pinmap` (all strings) |
-| `RESET` | Pulse the student board's RESET line | — |
-| `WAIT <ms>` | Board-side delay. Keeps all timing on the board | — |
+| `RESET` | One 10 ms low pulse on the student board's RST line (the pin-map row with the `reset` capability, open-drain), then `OK`. Follow it with `WAIT` for the board to boot | — || `WAIT <ms>` | Board-side delay (0–60000 ms), then `OK`. Keeps all timing on the board | — |
 | `DRIVE <pin> HIGH\|LOW\|RELEASE` | Drive the pin, or set it to high-Z | — |
 | `DRIVE <pin> PULSE <width_ms> HIGH\|LOW` | Drive to the level for width_ms, then back to the previous state | — |
 | `DRIVE <pin> BOUNCE <count> <interval_us> HIGH\|LOW` | Toggle `count` times, `interval_us` apart, and end at the given level (simulates switch bounce) | — |

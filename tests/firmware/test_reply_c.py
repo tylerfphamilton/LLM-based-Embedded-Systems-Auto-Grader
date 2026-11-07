@@ -220,3 +220,63 @@ def test_freq_argument_checks(freq_cases) -> None:
         assert freq_cases[case] == bad_window, case
     assert freq_cases["freq_winmax"].startswith("OK ")
     assert freq_cases["freq_args"] == "ERR BADCMD FREQ takes 2 arguments, got 1"
+
+
+
+# --------------------------------------------------------------------------- WAIT
+
+
+def test_wait_sleeps_then_replies_ok(output) -> None:
+    cases = output[0]
+    for case, ms in (("wait_500", 500), ("wait_0", 0), ("wait_max", 60000)):
+        assert cases[case] == ok(), case
+        assert cases[f"{case}_slept"] == str(ms), case
+
+
+def test_wait_rejects_bad_arguments_without_sleeping(output) -> None:
+    cases = output[0]
+    bad = format_response(Err("BADARG", "ms must be 0-60000"))
+    for case in ("wait_big", "wait_neg", "wait_frac"):
+        assert cases[case] == bad, case
+    assert cases["wait_args"] == "ERR BADCMD WAIT takes 1 arguments, got 0"
+    assert cases["wait_extra"] == "ERR BADCMD WAIT takes 1 arguments, got 2"
+    for case in ("wait_big", "wait_neg", "wait_frac", "wait_args", "wait_extra"):
+        assert cases[f"{case}_slept"] == "-1", case  # never slept
+
+
+
+
+# --------------------------------------------------------------------------- RESET
+
+
+def _reset_row(pinmap):
+    rows = [(name, info) for name, info in pinmap.pins.items() if "reset" in info.caps]
+    assert len(rows) <= 1, "more than one reset line in the pin map"
+    return rows[0] if rows else (None, None)
+
+
+def test_reset_pulses_the_mapped_line_once(output, pinmap) -> None:
+    cases = output[0]
+    name, info = _reset_row(pinmap)
+    m = _wired(info.stm32) if info else None
+    if name is None:
+        assert cases["reset_ok"] == format_response(Err("BADPIN", "no reset line in the pin map"))
+        assert cases["reset_ok_pulse"].startswith("0 ")
+    elif m is None:
+        want = Err("BADPIN", f"reset line {name} is not wired (TBD in the pin map)")
+        assert cases["reset_ok"] == format_response(want)
+        assert cases["reset_ok_pulse"].startswith("0 ")
+    else:
+        assert cases["reset_ok"] == ok()
+        assert cases["reset_ok_pulse"] == f"1 {m.group(1)} {int(m.group(2))}"  # exactly one
+
+
+def test_reset_errors(output, pinmap) -> None:
+    cases = output[0]
+    _, info = _reset_row(pinmap)
+    m = _wired(info.stm32) if info else None
+    if m is not None:
+        want = Err("INTERNAL", f"could not drive reset line P{m.group(1)}{int(m.group(2))}")
+        assert cases["reset_hw"] == format_response(want)
+    assert cases["reset_args"] == "ERR BADCMD RESET takes 0 arguments, got 1"
+    assert cases["reset_args_pulse"] == "0"  # a rejected RESET must not touch the line

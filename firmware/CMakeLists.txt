@@ -15,4 +15,5 @@ target_sources(app PRIVATE
     src/pins.c
     src/pins_table.c
     src/capture.c
+    src/rig.c
 )

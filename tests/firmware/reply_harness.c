@@ -14,6 +14,25 @@
 #include "cmd.h"
 #include "pins_gen.h"
 #include "reply.h"
+#include "rig.h"
+
+/* rig.c is Zephyr + GPIO; these stand-ins record what the firmware asked for. */
+static long stub_slept_ms = -1;
+static int stub_reset_rc;
+static int stub_resets;
+static char stub_reset_port;
+static unsigned stub_reset_pin;
+
+void rig_sleep_ms(uint32_t ms) {
+    stub_slept_ms = (long)ms;
+}
+
+int rig_reset_pulse(char port, uint8_t pin) {
+    stub_resets++;
+    stub_reset_port = port;
+    stub_reset_pin = pin;
+    return stub_reset_rc;
+}
 
 /* capture.c is Zephyr + timer hardware; this stand-in returns canned captures. */
 static struct capture_raw stub_raw;
@@ -222,6 +241,37 @@ int main(void) {
         break;
     }
     freq("freq_unknown", "FREQ D99 100");
+
+    /* WAIT: each case prints the reply, then how long the stub was asked to sleep (-1 = never) */
+    {
+        static const char *const waits[][2] = {
+            {"wait_500", "WAIT 500"},     {"wait_0", "WAIT 0"},
+            {"wait_max", "WAIT 60000"},   {"wait_big", "WAIT 60001"},
+            {"wait_neg", "WAIT -5"},      {"wait_frac", "WAIT 1.5"},
+            {"wait_args", "WAIT"},        {"wait_extra", "WAIT 5 6"},
+        };
+        for (size_t i = 0; i < sizeof(waits) / sizeof(waits[0]); i++) {
+            stub_slept_ms = -1;
+            freq(waits[i][0], waits[i][1]);
+            printf("%s_slept\t%ld\n", waits[i][0], stub_slept_ms);
+        }
+    }
+
+    /* RESET: prints the reply, then how many pulses and on which STM32 pin */
+    stub_resets = 0;
+    stub_reset_rc = 0;
+    freq("reset_ok", "RESET");
+    printf("reset_ok_pulse\t%d %c %u\n", stub_resets, stub_reset_port ? stub_reset_port : '-',
+           stub_reset_pin);
+
+    stub_resets = 0;
+    stub_reset_rc = -19; /* -ENODEV */
+    freq("reset_hw", "RESET");
+
+    stub_resets = 0;
+    stub_reset_rc = 0;
+    freq("reset_args", "RESET now");
+    printf("reset_args_pulse\t%d\n", stub_resets);
 
     /* the generated pin table */
     current = "pins";

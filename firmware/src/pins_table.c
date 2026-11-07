@@ -26,3 +26,14 @@ bool pins_wired(const struct pin_def* p){
 bool pins_can_capture(const struct pin_def* p){
     return p != NULL && (p->caps & CAP_TIMER_CAPTURE) != 0;
 }
+
+
+const struct pin_def* pins_reset_line(void){
+
+    for (size_t i = 0; i < PINS_COUNT; i++){
+        if (PINS[i].caps & CAP_RESET){
+            return &PINS[i];
+        }
+    }
+    return NULL;
+}

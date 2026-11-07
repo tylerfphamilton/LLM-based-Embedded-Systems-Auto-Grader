@@ -6,6 +6,7 @@
 #include "capture.h"
 #include "pins.h"
 #include "reply.h"
+#include "rig.h"
 #include "version.h"
 
 // most tokens a request can have (including the verb)
@@ -151,11 +152,59 @@ static void cmd_freq(const struct args *a, reply_fn reply){
     reply_send(&r, reply);
 }
 
+// WAIT <ms>: board-side delay, so all timing in a plan stays on the board (0-60000 ms).
+// Replies OK once the time has passed.
+static void cmd_wait(const struct args *a, reply_fn reply){
+
+    uint32_t ms;
+    struct reply_buf r;
+
+    if (!parse_u32(a->argv[1], 60000, &ms)){
+        reply_err(reply, "BADARG", "ms must be 0-60000");
+        return;
+    }
+    rig_sleep_ms(ms);
+
+    reply_begin(&r);
+    reply_send(&r, reply);
+}
+
+// RESET: one pulse on the student board's RST line (the pin-map row with the reset
+// capability). Replies OK once the line is released; the plan's WAIT gives the board time
+// to boot. Later this also frees ARM slots.
+static void cmd_reset(const struct args *a, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    struct reply_buf r;
+    const struct pin_def* p = pins_reset_line();
+    (void) a;
+
+    if (p == NULL){
+        reply_err(reply, "BADPIN", "no reset line in the pin map");
+        return;
+    }
+    if (!pins_wired(p)){
+        snprintf(msg, sizeof(msg), "reset line %.16s is not wired (TBD in the pin map)", p->name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (rig_reset_pulse(p->port, p->pin) != 0){
+        snprintf(msg, sizeof(msg), "could not drive reset line P%c%u", p->port, (unsigned)p->pin);
+        reply_err(reply, "INTERNAL", msg);
+        return;
+    }
+
+    reply_begin(&r);
+    reply_send(&r, reply);
+}
+
 // Command Table
-// Need to add reset, wait, drive, ... here as they are implemented
+// Need to add drive, ... here as they are implemented
 static const struct command commands[] = {
     {"PING", 0, 0, cmd_ping},
     {"FREQ", 2, 2, cmd_freq},
+    {"WAIT", 1, 1, cmd_wait},
+    {"RESET", 0, 0, cmd_reset},
 };
 
 
