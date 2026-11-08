@@ -65,7 +65,8 @@ class ArduinoCliFlasher(Flasher):
         fqbn: str = NANO33BLE_FQBN,
         cli: str = "arduino-cli",
         port: str | None = None,
-        timeout_s: float = 300.0,
+        timeout_s: float = 300.0,  # compile (a cold mbed core build can take minutes)
+        upload_timeout_s: float = 60.0,  # an upload takes ~5 s; longer means it is stuck
         run: Runner = subprocess.run,
         port_lister: Callable[[], Iterable[Any]] | None = None,
         reappear_timeout_s: float = 10.0,
@@ -74,6 +75,7 @@ class ArduinoCliFlasher(Flasher):
         monotonic: Callable[[], float] = time.monotonic,
     ):
         self.fqbn, self.cli, self.port, self.timeout_s = fqbn, cli, port, timeout_s
+        self.upload_timeout_s = upload_timeout_s
         self._run = run
         self._port_lister = port_lister
         self.reappear_timeout_s, self.settle_s = reappear_timeout_s, settle_s
@@ -90,12 +92,12 @@ class ArduinoCliFlasher(Flasher):
         self._sleep(self.settle_s)
         return True
 
-    def _exec(self, args: list[str]) -> tuple[int, str]:
+    def _exec(self, args: list[str], timeout_s: float) -> tuple[int, str]:
         proc = self._run(
             [self.cli, *args],
             capture_output=True,
             text=True,
-            timeout=self.timeout_s,
+            timeout=timeout_s,
             check=False,
         )
         return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
@@ -105,14 +107,15 @@ class ArduinoCliFlasher(Flasher):
             return FlashResult(False, "compile", "no sketch directory given")
         sketch = str(submission.sketch_dir)
         try:
-            code, log = self._exec(["compile", "--fqbn", self.fqbn, sketch])
+            code, log = self._exec(["compile", "--fqbn", self.fqbn, sketch], self.timeout_s)
         except (OSError, subprocess.TimeoutExpired) as exc:
             return FlashResult(False, "compile", f"could not run {self.cli}: {exc}")
         if code != 0:
             return FlashResult(False, "compile", log, student_fault=True)
         try:
             port = self.port or find_port(ARDUINO_VID, lister=self._port_lister)
-            code, up_log = self._exec(["upload", "-p", port, "--fqbn", self.fqbn, sketch])
+            up_args = ["upload", "-p", port, "--fqbn", self.fqbn, sketch]
+            code, up_log = self._exec(up_args, self.upload_timeout_s)
         except (OSError, subprocess.TimeoutExpired, TransportError) as exc:
             return FlashResult(False, "upload", f"{log}\nupload failed: {exc}")
         if code != 0:

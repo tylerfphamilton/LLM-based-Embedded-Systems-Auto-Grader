@@ -117,6 +117,7 @@ class SerialTransport(Transport):
 
     kind = "serial"
     POLL_S = 0.05  # port read timeout: how long one read() may block
+    WRITE_TIMEOUT_S = 2.0
 
     def __init__(
         self,
@@ -133,15 +134,27 @@ class SerialTransport(Transport):
 
             serial_factory = serial.Serial
         self.port = port or find_port(vid, lister=port_lister)
-        self._ser = serial_factory(self.port, baudrate=baud, timeout=self.POLL_S)
+        # write_timeout: a write to a wedged ST-Link must fail, not block forever
+        self._ser = serial_factory(
+            self.port, baudrate=baud, timeout=self.POLL_S, write_timeout=self.WRITE_TIMEOUT_S
+        )
         self._now = monotonic
         self._buf = b""
         # Drop anything the board sent before we were listening (boot banner, half lines).
         self._ser.reset_input_buffer()
 
+    def _port_gone(self, exc: OSError) -> TransportError:
+        # pyserial's SerialException (and its write timeout) are OSErrors
+        return TransportError(
+            f"measuring board port {self.port} stopped working ({exc}); replug the board"
+        )
+
     def send_line(self, line: str) -> None:
-        self._ser.write((line + "\n").encode("ascii"))
-        self._ser.flush()
+        try:
+            self._ser.write((line + "\n").encode("ascii"))
+            self._ser.flush()
+        except OSError as exc:
+            raise self._port_gone(exc) from None
 
     def read_line(self, timeout_s: float) -> str:
         deadline = self._now() + timeout_s
@@ -151,12 +164,18 @@ class SerialTransport(Transport):
                     f"no complete line within {timeout_s:.2f} s (got {self._buf!r})"
                 )
             # Blocks for at most POLL_S; returns whatever has arrived (maybe nothing).
-            self._buf += self._ser.read(max(1, self._ser.in_waiting))
+            try:
+                self._buf += self._ser.read(max(1, self._ser.in_waiting))
+            except OSError as exc:
+                raise self._port_gone(exc) from None
         raw, _, self._buf = self._buf.partition(b"\n")
         return raw.decode("ascii", errors="replace").rstrip("\r")
 
     def drain(self) -> None:
-        self._ser.reset_input_buffer()
+        try:
+            self._ser.reset_input_buffer()
+        except OSError as exc:
+            raise self._port_gone(exc) from None
         self._buf = b""
 
     def close(self) -> None:

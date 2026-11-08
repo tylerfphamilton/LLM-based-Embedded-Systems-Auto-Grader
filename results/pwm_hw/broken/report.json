@@ -1,0 +1,107 @@
+{
+  "report_version": "0.1",
+  "assignment": "pwm_1khz",
+  "plan_description": "Generate a 1 kHz PWM signal with 25% duty cycle on pin D5.",
+  "plan_schema_version": "0.1",
+  "submission": "broken",
+  "started_at": "2026-11-08T02:02:32.220803+00:00",
+  "finished_at": "2026-11-08T02:02:38.979448+00:00",
+  "rig": {
+    "transport": "serial:COM5",
+    "flasher": "arduino-cli",
+    "profile": "nucleo-l476rg-draft"
+  },
+  "flash": {
+    "ok": false,
+    "stage": "compile",
+    "student_fault": true,
+    "log": "\n\u001b[92mUsed platform\u001b[0m     \u001b[92mVersion\u001b[0m \u001b[90mPath\u001b[0m\n\u001b[93marduino:mbed_nano\u001b[0m 4.6.0   \u001b[90mC:\\Users\\seanh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\mbed_nano\\4.6.0\u001b[0m\nC:\\Users\\seanh\\embedded_autograder\\LLM-based-Embedded-Systems-Auto-Grader\\benchmark\\pwm_1khz\\broken\\broken.ino:13:1: error: expected ',' or ';' before 'void'\n void setup() {\n ^~~~\nError during build: exit status 1\n"
+  },
+  "assumptions": [
+    "Handout gives no tolerance; assumed ±2% frequency and ±1 percentage point duty cycle",
+    "Signal is stable 500 ms after reset"
+  ],
+  "rig_faults": [],
+  "rig_warnings": [],
+  "plan_warnings": [],
+  "checks": [
+    {
+      "id": "pwm.frequency_hz",
+      "step_id": "pwm",
+      "requirement": "D5 outputs a 1 kHz PWM signal with 25% duty cycle",
+      "primitive": "freq_duty",
+      "field": "frequency_hz",
+      "op": "approx",
+      "expected": 1000.0,
+      "expected_text": "≈ 1000 Hz ± 2%",
+      "tolerance": {
+        "tol_pct": 2.0
+      },
+      "measured": null,
+      "verdict": "FAIL",
+      "reason": "the sketch did not compile",
+      "feedback": null,
+      "code_location": null
+    },
+    {
+      "id": "pwm.duty_pct",
+      "step_id": "pwm",
+      "requirement": "D5 outputs a 1 kHz PWM signal with 25% duty cycle",
+      "primitive": "freq_duty",
+      "field": "duty_pct",
+      "op": "approx",
+      "expected": 25.0,
+      "expected_text": "≈ 25% ± 1 pt",
+      "tolerance": {
+        "tol_abs": 1.0
+      },
+      "measured": null,
+      "verdict": "FAIL",
+      "reason": "the sketch did not compile",
+      "feedback": null,
+      "code_location": null
+    },
+    {
+      "id": "not_graded.1",
+      "step_id": null,
+      "requirement": "Use a hardware timer (not analogWrite or a delay loop)",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "Not observable electrically",
+      "feedback": null,
+      "code_location": null
+    }
+  ],
+  "command_log": [
+    {
+      "t_ms": 0.042,
+      "dir": "tx",
+      "line": "PING"
+    },
+    {
+      "t_ms": 5.249,
+      "dir": "rx",
+      "line": "OK fw=\"0.1\" protocol=\"0.2\" pinmap=\"6e27016f\""
+    },
+    {
+      "t_ms": 5.303,
+      "dir": "note",
+      "line": "handshake: {'fw': '0.1', 'protocol': '0.2', 'pinmap': '6e27016f'}"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "PASS": 0,
+    "FAIL": 2,
+    "BORDERLINE": 0,
+    "ERROR": 0,
+    "NOT_GRADED": 1
+  },
+  "llm": null
+}

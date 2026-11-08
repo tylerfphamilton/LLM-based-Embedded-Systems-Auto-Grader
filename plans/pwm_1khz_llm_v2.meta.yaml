@@ -1,0 +1,15 @@
+source: llm
+status: approved
+handout: handouts/pwm_1khz.md
+handout_sha256: fcf561dfe026c283899cfd46810c54c6468e3b6d2065d3220f6b6723485c3490
+model: claude-sonnet-5
+prompt_version: 6df18b94
+attempts: 2
+tokens:
+  input: 23702
+  output: 1961
+generated_at: '2026-11-08T02:23:39.729603+00:00'
+draft: plans/drafts/pwm_1khz_llm_v2.draft.json
+approved_by: Sean
+approved_at: '2026-11-08T02:27:05.187413+00:00'
+plan_sha256: 4fbcba68bde6d3f32833d5f4340ada6b468ef938d44ae7446fcb482dae6ae025

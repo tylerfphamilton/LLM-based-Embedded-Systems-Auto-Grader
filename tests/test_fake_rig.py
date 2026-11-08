@@ -145,8 +145,9 @@ class FakeSerial:
     """Mimics pyserial. Like the ST-Link on Windows, changing `timeout` on the open port
     resets the link and drops whatever is in flight."""
 
-    def __init__(self, port: str, baudrate: int, timeout: float):
+    def __init__(self, port: str, baudrate: int, timeout: float, write_timeout: float):
         self.port, self.baudrate, self._timeout = port, baudrate, timeout
+        self.write_timeout = write_timeout
         self.timeout_changes = 0
         self.written = b""
         self.stale = b"garbage from before the port was opened\n"

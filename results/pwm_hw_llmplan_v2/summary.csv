@@ -1,0 +1,8 @@
+assignment,submission,ground_truth_faulty,fault,pass,fail,borderline,error,flagged,llm_input_tokens,llm_output_tokens,llm_latency_s,llm_cost_usd,elapsed_s
+pwm_1khz_llm_v2,borderline,false,,2,1,0,0,true,1732,376,4.007,0.007224,24.8
+pwm_1khz_llm_v2,broken,true,compiler_error,0,3,0,0,true,1987,673,6.473,0.010704,13.3
+pwm_1khz_llm_v2,correct,false,,3,0,0,0,false,,,,,18.2
+pwm_1khz_llm_v2,correct_alt_style,false,,3,0,0,0,false,,,,,18.2
+pwm_1khz_llm_v2,wrong_duty,true,wrong_duty,2,1,0,0,true,1887,211,2.344,0.005884,20.1
+pwm_1khz_llm_v2,wrong_pin,true,wrong_pin,0,3,0,0,true,2115,684,6.264,0.011070,24.5
+pwm_1khz_llm_v2,wrong_prescaler,true,wrong_prescaler,2,1,0,0,true,1867,705,6.982,0.010784,25.2

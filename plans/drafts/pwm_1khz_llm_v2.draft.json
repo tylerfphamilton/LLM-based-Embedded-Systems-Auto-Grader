@@ -1,0 +1,54 @@
+{
+  "schema_version": "0.1",
+  "assignment": "pwm_1khz_llm_v2",
+  "description": "Verify that the student's Nano 33 BLE Sense generates a free-running 1 kHz, 25% duty cycle square wave on D5 immediately after reset, without any stimulus.",
+  "setup": {
+    "reset": true,
+    "boot_wait_ms": 1000
+  },
+  "steps": [
+    {
+      "op": "measure",
+      "id": "pwm_freq_duty",
+      "requirement": "The signal on D5 has a frequency of 1 kHz and a duty cycle of 25%, starting on its own right after reset.",
+      "primitive": "freq_duty",
+      "pin": "D5",
+      "window_ms": 500,
+      "expect": [
+        {
+          "op": "approx",
+          "field": "frequency_hz",
+          "value": 1000,
+          "tol_pct": 2
+        },
+        {
+          "op": "approx",
+          "field": "duty_pct",
+          "value": 25,
+          "tol_abs": 1
+        },
+        {
+          "op": "ge",
+          "field": "edge_count",
+          "value": 2
+        }
+      ]
+    }
+  ],
+  "not_graded": [
+    {
+      "requirement": "Must use a hardware timer/PWM peripheral (not analogWrite() or delay()-based bit-banging).",
+      "reason": "Not electrically observable: a correctly timed 1 kHz/25% waveform can be produced by either a hardware timer or careful software timing; this can only be checked by TA code review."
+    },
+    {
+      "requirement": "Register values/constants are commented and their computation explained.",
+      "reason": "Code documentation/comments cannot be verified electrically; requires manual review of the submitted source."
+    }
+  ],
+  "assumptions": [
+    "No tolerance was given for frequency, so a default of tol_pct: 2 is used.",
+    "No tolerance was given for duty cycle, so a default of tol_abs: 1 percentage point is used.",
+    "A 500 ms measurement window is used, giving ~500 periods of the 1 kHz signal for a stable frequency/duty measurement.",
+    "Requirement 2 (signal starts on its own after reset) is verified implicitly by measuring the waveform right after the mandatory 1000 ms boot wait, with no stimulus step preceding it."
+  ]
+}

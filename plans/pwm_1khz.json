@@ -2,7 +2,7 @@
   "schema_version": "0.1",
   "assignment": "pwm_1khz",
   "description": "Generate a 1 kHz PWM signal with 25% duty cycle on pin D5.",
-  "setup": { "reset": true, "boot_wait_ms": 500 },
+  "setup": { "reset": true, "boot_wait_ms": 1000 },
   "steps": [
     {
       "op": "measure",

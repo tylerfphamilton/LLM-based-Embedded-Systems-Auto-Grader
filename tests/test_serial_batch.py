@@ -156,6 +156,14 @@ def test_serial_batch_flashes_in_order_and_uses_labels(tmp_path, pinmap, rig_pro
     assert [r["ground_truth_faulty"] for r in table] == ["false", "true", ""]
     assert all(r["elapsed_s"] for r in table)
     assert (tmp_path / "out" / "c" / "report.json").exists()
+    assert (tmp_path / "out" / "c" / "flash.log").exists()  # arduino-cli output kept
+
+
+def test_serial_batch_prints_progress(tmp_path, pinmap, rig_profile, capsys) -> None:
+    _serial(tmp_path, pinmap, rig_profile, _device(pinmap), RecordingFlasher())
+    out = capsys.readouterr().out
+    assert "[1/3] a: compiling, uploading and measuring..." in out
+    assert "[3/3] c: 2/2 PASS, 0 FAIL, 0 BORDERLINE, 0 ERROR (" in out
 
 
 def test_serial_batch_survives_an_exception(tmp_path, pinmap, rig_profile, capsys) -> None:
@@ -338,3 +346,56 @@ def test_flasher_port_never_returns(tmp_path: Path) -> None:
     assert not res.ok and res.stage == "upload" and not res.student_fault
     assert "did not come back within 10.0 s" in res.log
     assert clock.t == pytest.approx(10.0, abs=0.2) and 1.0 not in clock.sleeps
+
+
+def test_flasher_upload_has_its_own_timeout(tmp_path: Path) -> None:
+    timeouts: dict[str, float] = {}
+
+    def run(args, **kw):
+        timeouts[args[1]] = kw["timeout"]
+        return SimpleNamespace(returncode=0, stdout="ok\n", stderr="")
+
+    ports = [SimpleNamespace(device="COM7", vid=ARDUINO_VID)]
+    fl = ArduinoCliFlasher(run=run, port_lister=lambda: ports, sleep=lambda s: None)
+    assert fl.flash(Submission("s", tmp_path)).ok
+    assert timeouts == {"compile": 300.0, "upload": 60.0}
+
+
+# ------------------------------------------------------------------ serial port failures
+
+
+class BrokenSerial:
+    """A pyserial port whose device vanished: every call fails like SerialException."""
+
+    def __init__(self, *a, **kw) -> None:
+        self.kw = kw
+
+    def reset_input_buffer(self) -> None:
+        pass
+
+    def write(self, data: bytes) -> int:
+        raise OSError("WriteFile failed (PermissionError(13, 'Access is denied.'))")
+
+    def flush(self) -> None:
+        pass
+
+    @property
+    def in_waiting(self) -> int:
+        raise OSError("ClearCommError failed")
+
+    def read(self, n: int) -> bytes:
+        raise OSError("ReadFile failed")
+
+    def close(self) -> None:
+        pass
+
+
+def test_serial_port_failure_is_a_transport_error() -> None:
+    from grader.transport import SerialTransport, TransportError
+
+    t = SerialTransport("COM5", serial_factory=BrokenSerial)
+    assert t._ser.kw["write_timeout"] == SerialTransport.WRITE_TIMEOUT_S
+    with pytest.raises(TransportError, match="COM5 stopped working"):
+        t.send_line("PING")
+    with pytest.raises(TransportError, match="replug the board"):
+        t.read_line(1.0)

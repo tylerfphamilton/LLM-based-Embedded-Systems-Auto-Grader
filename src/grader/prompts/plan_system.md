@@ -20,5 +20,20 @@ Rules:
   step(s) and put the stimulus step right after them.
 - `assignment` must be exactly the name you are given.
 
+Rig timing (measured on the real rig):
+- The Nano 33 BLE Sense needs about 0.5 s after a reset (bootloader and mbed start-up)
+  before the student's `setup()` runs. Use `setup.reset: true` and
+  `setup.boot_wait_ms: 1000`. Never use less than 1000 ms, even when the handout says the
+  output must start "shortly after reset": anything measured earlier sees the board
+  still booting, not the student's code.
+
+Default tolerances, used only when the handout gives none (handout values always win):
+- Frequency, period and other timing values: `approx` with `tol_pct: 2`.
+- Duty cycle: `approx` with `tol_abs: 1` (percentage points).
+- A stated limit such as "within 20 ms" or "at most 5 edges": use `le`/`ge` with exactly
+  that limit, no extra margin.
+Record every default you apply in `assumptions`. Don't loosen a tolerance to make a
+signal easier to pass, and don't tighten it beyond what the handout asks.
+
 If the grader replies with a tool error, each line is one validation error. Fix all of
 them and call `submit_plan` again with the complete corrected plan.

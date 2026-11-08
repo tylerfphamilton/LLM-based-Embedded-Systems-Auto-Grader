@@ -244,6 +244,15 @@ def load_labels(folder: Path) -> dict[str, GroundTruth]:
 DEAD_RIG = "measuring board not responding: check USB / firmware"
 
 
+def _progress(report: Report) -> str:
+    """One-line result for the terminal while a serial batch runs."""
+    s = report.summary
+    line = f"{s.PASS}/{s.graded} PASS, {s.FAIL} FAIL, {s.BORDERLINE} BORDERLINE, {s.ERROR} ERROR"
+    if not report.flash.ok:
+        line += f"  [flash failed at {report.flash.stage}]"
+    return line
+
+
 def run_serial_batch(
     plan: Plan,
     submissions: list[Submission],
@@ -267,8 +276,10 @@ def run_serial_batch(
     n_checks = sum(len(s.expect) for s in plan.steps if is_measure(s))
     stopped = None
     try:
-        for sub in submissions:
+        for i, sub in enumerate(submissions, start=1):
             gt = labels.get(sub.id)
+            tag = f"[{i}/{len(submissions)}] {sub.id}"
+            print(f"{tag}: compiling, uploading and measuring...", flush=True)
             t0 = time.monotonic()
             try:
                 report = run(
@@ -293,7 +304,11 @@ def run_serial_batch(
                 )  # fmt: skip
                 continue
             elapsed = time.monotonic() - t0
-            rows.append(_row(sub.id, gt, report, _write(report, out_dir), cost_usd, elapsed))
+            report_dir = _write(report, out_dir)
+            if report_dir is not None:  # arduino-cli output, as --flash-only saves it
+                (report_dir / "flash.log").write_text(report.flash.log, encoding="utf-8")
+            rows.append(_row(sub.id, gt, report, report_dir, cost_usd, elapsed))
+            print(f"{tag}: {_progress(report)} ({elapsed:.1f} s)", flush=True)
             if not report.flash.ok and report.flash.stage == "skipped":  # handshake failed
                 stopped = f"{DEAD_RIG} (stopped after {sub.id!r})"
                 print(stopped, file=sys.stderr)
