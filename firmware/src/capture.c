@@ -149,9 +149,13 @@ int capture_measure(char port, uint8_t pin, uint32_t window_ms, struct capture_r
     acc = (struct capture_raw){0};
     rise_open = false;
 
-    // route the pin to the timer: alternate function, no pull resistor
+    // route the pin to the timer: alternate function, with the internal pull-down.
+    // When nothing drives the wire (the student's pin unconfigured, or the Nano booting or
+    // in reset) a floating input picks up noise such as 60 Hz mains hum and turns it into
+    // edges. The weak pull-down (~40 kOhm) holds it low, so an undriven pin reads as
+    // no signal (frequency_hz=null). It does not load a real push-pull output.
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOA);
-    LL_GPIO_SetPinPull(in->gpio, mask, LL_GPIO_PULL_NO);
+    LL_GPIO_SetPinPull(in->gpio, mask, LL_GPIO_PULL_DOWN);
     if (in->pin < 8){
         LL_GPIO_SetAFPin_0_7(in->gpio, mask, in->af);
     }
@@ -200,7 +204,7 @@ int capture_measure(char port, uint8_t pin, uint32_t window_ms, struct capture_r
     irq_unlock(key);
     out->clock_hz = tim_clk_hz;
 
-    // release the pin: plain input again (high impedance)
+    // release the pin: plain input again (the pull-down stays on, so the line stays quiet)
     LL_GPIO_SetPinMode(in->gpio, mask, LL_GPIO_MODE_INPUT);
     return CAPTURE_OK;
 }
