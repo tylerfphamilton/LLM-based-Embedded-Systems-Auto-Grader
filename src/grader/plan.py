@@ -265,6 +265,44 @@ PRIMITIVE_FIELDS: dict[str, tuple[str, ...]] = {
     "analog_read": ("mean_mv", "min_mv", "max_mv"),
 }
 
+#: Type, unit and null case of every result field, as docs/protocol.md defines them. Sent to
+#: the LLM with the primitive list so it writes expectations of the right type (e.g. 0/1,
+#: not "low"/"high"). Must cover exactly the fields in PRIMITIVE_FIELDS (a test checks).
+FIELD_DOCS: dict[str, dict[str, str]] = {
+    "freq_duty": {
+        "frequency_hz": "number, Hz; null if fewer than 2 rising edges (no signal)",
+        "duty_pct": "number, % of the period spent high (0-100); null if no signal",
+        "edge_count": "integer, rising edges in the window",
+    },
+    "edge_delay": {
+        "delay_ms": (
+            "number, ms from the first from_edge on from_pin to the first to_edge on "
+            "to_pin; null if to_pin never changed within timeout_ms"
+        ),
+        "to_edge_count": "integer, to_edge edges on to_pin from the trigger until timeout_ms",
+    },
+    "logic_trace": {
+        "edge_count": "integer, edges in either direction during the window",
+        "final_level": "integer, 0 (low) or 1 (high) at the end of the window",
+        "edges_ms": "list of numbers, ms of each edge from the start of the window",
+    },
+    "uart_read": {
+        "text": "string, the bytes received (undecodable bytes become U+FFFD)",
+        "byte_count": "integer, bytes received",
+        "framing_errors": "integer, bytes received with framing errors (e.g. wrong baud)",
+    },
+    "i2c_log": {
+        "read_count": "integer, read transactions",
+        "write_count": "integer, write transactions",
+        "transactions": 'list of strings such as "W:0x68:0x3B" or "R:0x68:0x3B:6"',
+    },
+    "analog_read": {
+        "mean_mv": "number, mV",
+        "min_mv": "number, mV",
+        "max_mv": "number, mV",
+    },
+}
+
 # ------------------------------------------------------------------------------------ plan
 
 

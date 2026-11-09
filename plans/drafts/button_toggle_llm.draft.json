@@ -1,0 +1,178 @@
+{
+  "schema_version": "0.1",
+  "assignment": "button_toggle_llm",
+  "description": "Verify debounced button-to-LED toggle on D2/D13 with ON/OFF reporting on Serial1, including fast reaction and single-toggle-per-bouncy-press behavior.",
+  "setup": {
+    "reset": true,
+    "boot_wait_ms": 1000
+  },
+  "steps": [
+    {
+      "op": "drive",
+      "id": "init_release",
+      "pin": "D2",
+      "action": "release"
+    },
+    {
+      "op": "measure",
+      "id": "led_off_reset",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 150,
+      "requirement": "The LED is off immediately after reset.",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "led_on",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "requirement": "A clean button press turns the LED on (exactly one toggle edge).",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 1
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "react_delay",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "rising",
+      "timeout_ms": 200,
+      "concurrent_with_next": true,
+      "requirement": "The LED reacts quickly to a button press (within 50 ms, no noticeable delay).",
+      "expect": [
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 50
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "uart_on",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "requirement": "On turning the LED on, the board prints 'ON' on its own line on Serial1.",
+      "expect": [
+        {
+          "op": "contains",
+          "field": "text",
+          "value": "ON"
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "id": "press1",
+      "pin": "D2",
+      "action": "low"
+    },
+    {
+      "op": "drive",
+      "id": "release1",
+      "pin": "D2",
+      "action": "release"
+    },
+    {
+      "op": "wait",
+      "ms": 50
+    },
+    {
+      "op": "measure",
+      "id": "led_off_toggle",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "requirement": "A second, bouncy button press turns the LED off with exactly one toggle edge, proving debouncing works.",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 1
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "uart_off",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "requirement": "On turning the LED off, the board prints 'OFF' on its own line on Serial1.",
+      "expect": [
+        {
+          "op": "contains",
+          "field": "text",
+          "value": "OFF"
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "id": "press2_bounce",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 10,
+      "interval_us": 2000,
+      "final_level": "low"
+    },
+    {
+      "op": "drive",
+      "id": "release2",
+      "pin": "D2",
+      "action": "release"
+    }
+  ],
+  "assumptions": [
+    "\"Reacts quickly / no noticeable delay\" is graded as an LED response within 50 ms of the button edge, since the handout gives no numeric bound.",
+    "A real bouncy press is simulated with 10 contact bounces at 2 ms intervals before settling low; this is treated as a representative bounce pattern since the handout gives no bounce profile.",
+    "UART text requirements are checked with a 'contains' match on \"ON\"/\"OFF\" rather than an exact full-line regex, to tolerate surrounding whitespace/newline formatting.",
+    "The button idle (unpressed) state is simulated by releasing the drive line, relying on the student's INPUT_PULLUP to read it high, matching the handout's wiring (no external resistor).",
+    "logic_trace's final_level field is numeric (0 = low, 1 = high)."
+  ],
+  "not_graded": [
+    {
+      "requirement": "Debouncing must be implemented in software without blocking delay() calls.",
+      "reason": "Implementation technique (blocking vs non-blocking code, use of millis() timers) cannot be determined from electrical behavior alone."
+    },
+    {
+      "requirement": "Code must be commented.",
+      "reason": "Source-code style/comments are not observable through electrical measurement."
+    }
+  ]
+}

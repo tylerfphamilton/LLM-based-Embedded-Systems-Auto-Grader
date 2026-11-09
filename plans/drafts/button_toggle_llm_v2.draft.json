@@ -1,0 +1,242 @@
+{
+  "schema_version": "0.1",
+  "assignment": "button_toggle_llm_v2",
+  "description": "Verify debounced button-toggle LED behavior and Serial1 ON/OFF reporting on the Nano 33 BLE Sense.",
+  "setup": {
+    "reset": true,
+    "boot_wait_ms": 1000
+  },
+  "assumptions": [
+    "Handout says the LED must react 'quickly' with no numeric limit; we assume a 50 ms button-to-LED reaction threshold.",
+    "Button press is simulated by driving D2 low for 50 ms then releasing (high); 50 ms hold is assumed long enough for any reasonable debounce filter to recognize a stable press.",
+    "Contact bounce is simulated with 6 transitions at 2 ms intervals (~10-12 ms of bounce), a typical mechanical switch bounce duration.",
+    "100 ms settle waits after each press/release are assumed sufficient for debounce logic and LED state to stabilize.",
+    "Stated limits ('quickly', 'exactly once') are graded with le/eq and no extra tolerance margin, per the default rule for stated limits."
+  ],
+  "not_graded": [
+    {
+      "requirement": "Implement debouncing in software without blocking delay() calls.",
+      "reason": "Implementation technique (blocking vs non-blocking code) cannot be verified by electrical measurement alone."
+    },
+    {
+      "requirement": "Comment your code.",
+      "reason": "Code style/comments are not observable electrically."
+    }
+  ],
+  "steps": [
+    {
+      "op": "measure",
+      "id": "led_off_at_reset",
+      "requirement": "The LED is off after reset, before any button press.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 200,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press1_reaction",
+      "requirement": "The LED turns on quickly after the first button press.",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "rising",
+      "timeout_ms": 100,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 50
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press1_uart",
+      "requirement": "On the first press (turning the LED on), 'ON' is printed on Serial1.",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "contains",
+          "field": "text",
+          "value": "ON"
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "low",
+      "id": "press1"
+    },
+    {
+      "op": "wait",
+      "ms": 50
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "high",
+      "id": "release1"
+    },
+    {
+      "op": "wait",
+      "ms": 100
+    },
+    {
+      "op": "measure",
+      "id": "led_on_after_press1",
+      "requirement": "The LED is on after the first press.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 50,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press2_reaction",
+      "requirement": "The LED turns off quickly after the second button press.",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "falling",
+      "timeout_ms": 100,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 50
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press2_uart",
+      "requirement": "On the second press (turning the LED off), 'OFF' is printed on Serial1.",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "contains",
+          "field": "text",
+          "value": "OFF"
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "low",
+      "id": "press2"
+    },
+    {
+      "op": "wait",
+      "ms": 50
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "high",
+      "id": "release2"
+    },
+    {
+      "op": "wait",
+      "ms": 100
+    },
+    {
+      "op": "measure",
+      "id": "led_off_after_press2",
+      "requirement": "The LED is off after the second press.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 50,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "bounce_toggle_once",
+      "requirement": "A single bouncing button press toggles the LED exactly once.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 6,
+      "interval_us": 2000,
+      "final_level": "low",
+      "id": "bouncing_press"
+    },
+    {
+      "op": "wait",
+      "ms": 100
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "high",
+      "id": "release3"
+    },
+    {
+      "op": "wait",
+      "ms": 100
+    },
+    {
+      "op": "measure",
+      "id": "led_on_after_bounce",
+      "requirement": "After the bouncing press, the LED ends up on (toggled once from off).",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 50,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 1
+        }
+      ]
+    }
+  ]
+}

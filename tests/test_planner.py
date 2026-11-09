@@ -47,7 +47,8 @@ def test_first_request_contents(root) -> None:
     (msg,) = req.messages
     assert "<handout>" in msg["content"] and "1 kHz" in msg["content"]
     assert "D5:" in msg["content"]  # pin map YAML
-    assert "freq_duty: frequency_hz, duty_pct, edge_count" in msg["content"]
+    assert "- freq_duty:\n    - frequency_hz: number, Hz; null if" in msg["content"]
+    assert "final_level: integer, 0 (low) or 1 (high)" in msg["content"]
     assert req.tool == plan_tool() and req.tool["name"] == PLAN_TOOL
     schema = req.tool["input_schema"]
     assert schema["type"] == "object" and "$schema" not in schema
@@ -100,6 +101,35 @@ def test_invalid_then_valid_sends_tool_result_error(root, pinmap, good_plan, bad
     assert tr["content"] == "step 'pwm': pin D7 is not in the pin map."
 
 
+def test_field_docs_cover_exactly_the_primitive_fields() -> None:
+    from grader.plan import FIELD_DOCS, PRIMITIVE_FIELDS
+
+    assert {p: set(d) for p, d in FIELD_DOCS.items()} == {
+        p: set(fs) for p, fs in PRIMITIVE_FIELDS.items()
+    }
+
+
+def test_nested_plan_is_unwrapped_without_a_retry(root, pinmap, good_plan) -> None:
+    fake = FakeLLMClient([FakeLLMClient.tool_call(PLAN_TOOL, {"plan": good_plan})])
+    result = generate_plan(fake, _request(root), name="pwm_1khz", pinmap=pinmap)
+    assert result.ok and result.attempts == 1 and result.raw_plan == good_plan
+    assert result.notes == ["attempt 1: plan was nested under 'plan'; unwrapped it"]
+    assert len(fake.requests) == 1
+
+
+def test_nested_invalid_plan_reports_the_real_errors(root, pinmap, good_plan, bad_plan) -> None:
+    fake = FakeLLMClient(
+        [
+            FakeLLMClient.tool_call(PLAN_TOOL, {"plan": bad_plan}, n=1),
+            FakeLLMClient.tool_call(PLAN_TOOL, good_plan, n=2),
+        ]
+    )
+    result = generate_plan(fake, _request(root), name="pwm_1khz", pinmap=pinmap)
+    assert result.ok and result.attempts == 2
+    (tr,) = fake.requests[1].messages[2]["content"]
+    assert tr["content"] == "step 'pwm': pin D7 is not in the pin map."  # not 'unknown field'
+
+
 def test_wrong_assignment_name_is_an_error(root, pinmap, good_plan) -> None:
     fake = FakeLLMClient([FakeLLMClient.tool_call(PLAN_TOOL, good_plan)])
     result = generate_plan(fake, _request(root), name="other", pinmap=pinmap, max_attempts=1)
@@ -123,6 +153,7 @@ def test_meta_file_contents(root, pinmap, good_plan, tmp_path) -> None:
     assert meta["handout_sha256"] == file_sha256(handout)
     assert meta["model"] == "fake-model" and len(meta["prompt_version"]) == 8
     assert meta["attempts"] == 2 and meta["tokens"] == {"input": 200, "output": 100}
+    assert meta["notes"] == []
     assert meta["generated_at"] == NOW.isoformat()
     assert meta["draft"] == (tmp_path / "drafts" / "pwm_1khz.draft.json").as_posix()
     assert meta["approved_by"] is None and meta["plan_sha256"] is None

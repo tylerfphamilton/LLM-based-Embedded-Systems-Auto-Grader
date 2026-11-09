@@ -1,0 +1,15 @@
+source: llm
+status: draft
+handout: handouts/button_toggle.md
+handout_sha256: be7081cbb19db385637c528726ecd587bc82f435820dcf243bad0d023c76e453
+model: claude-sonnet-5
+prompt_version: 6df18b94
+attempts: 3
+tokens:
+  input: 48550
+  output: 9996
+generated_at: '2026-11-09T20:25:56.819506+00:00'
+draft: plans/drafts/button_toggle_llm.draft.json
+approved_by: null
+approved_at: null
+plan_sha256: null

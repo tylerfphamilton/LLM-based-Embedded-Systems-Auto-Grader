@@ -26,7 +26,14 @@ from grader.llm import (
     tool_use_block,
 )
 from grader.pinmap import PinMap
-from grader.plan import PRIMITIVE_FIELDS, Plan, PlanError, export_schema, parse_plan
+from grader.plan import (
+    FIELD_DOCS,
+    PRIMITIVE_FIELDS,
+    Plan,
+    PlanError,
+    export_schema,
+    parse_plan,
+)
 from grader.validate import validate_plan
 
 PLAN_TOOL = "submit_plan"
@@ -45,14 +52,22 @@ def plan_tool() -> dict:
     }
 
 
+def primitives_text() -> str:
+    """Each primitive with its result fields, typed: '- freq_duty:' then one line per field."""
+    lines = []
+    for prim, fields in PRIMITIVE_FIELDS.items():
+        lines.append(f"- {prim}:")
+        lines += [f"    - {f}: {FIELD_DOCS[prim][f]}" for f in fields]
+    return "\n".join(lines)
+
+
 def user_message(name: str, handout: str, pinmap_yaml: str) -> str:
-    prims = "\n".join(f"- {p}: {', '.join(fs)}" for p, fs in PRIMITIVE_FIELDS.items())
     return (
         f"Write the test plan for assignment `{name}`.\n\n"
         f"<handout>\n{handout.strip()}\n</handout>\n\n"
         f"<pin_map>\n{pinmap_yaml.strip()}\n</pin_map>\n\n"
-        f"<primitives>\nEach measurement primitive and the result fields it returns:\n"
-        f"{prims}\n</primitives>"
+        f"<primitives>\nEach measurement primitive and the result fields it returns "
+        f"(type, unit, and when it is null):\n{primitives_text()}\n</primitives>"
     )
 
 
@@ -101,6 +116,7 @@ class PlanResult:
     attempts: int
     responses: list[LLMResponse] = field(default_factory=list)
     messages: list[dict] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)  # e.g. a nested plan we unwrapped
 
     @property
     def tokens(self) -> dict[str, int]:
@@ -108,6 +124,14 @@ class PlanResult:
             "input": sum(r.input_tokens for r in self.responses),
             "output": sum(r.output_tokens for r in self.responses),
         }
+
+
+def unwrap_plan(raw: Any) -> tuple[Any, bool]:
+    """Models often nest the plan as ``{"plan": {...}}``. Take the inner object, so that
+    formatting slip does not cost a whole retry. Returns (plan, whether it was unwrapped)."""
+    if isinstance(raw, dict) and set(raw) == {"plan"} and isinstance(raw["plan"], dict):
+        return raw["plan"], True
+    return raw, False
 
 
 def check_draft(raw: Any, name: str, pinmap: PinMap) -> list[str]:
@@ -140,6 +164,7 @@ def generate_plan(
     messages = list(first.messages)
     responses: list[LLMResponse] = []
     errors: list[str] = []
+    notes: list[str] = []
     for attempt in range(1, max_attempts + 1):
         try:
             resp = client.complete(replace(first, messages=list(messages)))
@@ -153,10 +178,13 @@ def generate_plan(
             )
             continue
         responses.append(resp)
-        errors = check_draft(resp.tool_input, name, pinmap)
+        raw, unwrapped = unwrap_plan(resp.tool_input)
+        if unwrapped:
+            notes.append(f"attempt {attempt}: plan was nested under 'plan'; unwrapped it")
+        errors = check_draft(raw, name, pinmap)
         messages.append({"role": "assistant", "content": resp.raw.get("content", [])})
         if not errors:
-            return PlanResult(True, resp.tool_input, [], attempt, responses, messages)
+            return PlanResult(True, raw, [], attempt, responses, messages, notes)
         block = tool_use_block(resp.raw, PLAN_TOOL) or {}
         messages.append(
             {
@@ -171,7 +199,7 @@ def generate_plan(
                 ],
             }
         )
-    return PlanResult(False, None, errors, max_attempts, responses, messages)
+    return PlanResult(False, None, errors, max_attempts, responses, messages, notes)
 
 
 # --------------------------------------------------------------------------- provenance
@@ -217,6 +245,7 @@ def write_outputs(
                 "prompt_version": prompt_version,
                 "ok": result.ok,
                 "errors": result.errors,
+                "notes": result.notes,
                 "conversation": result.messages,
                 "responses": [r.raw for r in result.responses],
             },
@@ -242,6 +271,7 @@ def write_outputs(
             "model": result.responses[-1].model,
             "prompt_version": prompt_version,
             "attempts": result.attempts,
+            "notes": result.notes,
             "tokens": result.tokens,
             "generated_at": now.isoformat(),
             "draft": draft.as_posix(),

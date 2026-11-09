@@ -1,0 +1,564 @@
+{
+  "prompt_version": "6df18b94",
+  "ok": true,
+  "errors": [],
+  "notes": [
+    "attempt 1: plan was nested under 'plan'; unwrapped it"
+  ],
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Write the test plan for assignment `button_toggle_llm_v2`.\n\n<handout>\n# Lab 4: Debounced button toggle (mock handout)\n\n> Mock handout written for testing `grader make-plan`. It is not an official course\n> document.\n\n## Goal\n\nUse a push button to toggle an LED, and report each change over a serial port.\n\n## Hardware\n\n* A push button between pin **D2** and GND. There is no external resistor, so use the\n  internal pull-up (`INPUT_PULLUP`). The button reads LOW while pressed.\n* The on-board LED on pin **D13**.\n* **Serial1** (pins D0/D1), not the USB `Serial` port, at **9600 baud**.\n\n## Requirements\n\n1. The LED is **off** after reset.\n2. Each press of the button toggles the LED: the first press turns it on, the next one\n   turns it off, and so on.\n3. The LED must react **quickly**: a user should not notice any delay.\n4. Real buttons bounce. One press must toggle the LED exactly **once**, no matter how\n   much the contacts bounce.\n5. On every toggle, print `ON` or `OFF` (the new state) on its own line on Serial1.\n6. Implement debouncing in software, without blocking `delay()` calls.\n7. Comment your code.\n\n## Submission\n\nSubmit your sketch folder.\n</handout>\n\n<pin_map>\n# Student board (Arduino Nano 33 BLE Sense) pin name -> measuring board (Nucleo-L476RG) pin.\n# Capabilities are from the MEASURING board's point of view (uart_rx = STM32 receives).\n#\n# !!! Every stm32 value is a PLACEHOLDER until verified in STM32CubeMX against the wiring. !!!\npins:\n  D5:  { stm32: PA0,  caps: [gpio, timer_capture] }   # placeholder, verify in CubeMX (TIM2_CH1?)\n  D2:  { stm32: TBD,  caps: [gpio, drive] }           # placeholder, button input on the student side\n  D13: { stm32: TBD,  caps: [gpio, timer_capture] }   # placeholder, on-board LED on the Nano\n  D1:  { stm32: PA10, caps: [uart_rx] }               # Nano Serial1 TX -> STM32 USART1 RX (placeholder)\n  D0:  { stm32: PA9,  caps: [uart_tx] }               # Nano Serial1 RX <- STM32 USART1 TX (placeholder)\n  A0:  { stm32: TBD,  caps: [analog_in, dac] }        # placeholder; L476 DAC1_OUT1 is PA4\n  A4:  { stm32: TBD,  caps: [i2c_sda] }               # placeholder, STM32 acts as I2C target\n  A5:  { stm32: TBD,  caps: [i2c_scl] }               # placeholder\n  # Rig only, never used by a plan: open-drain line from the STM32 to the Nano's RST pin.\n  RST: { stm32: PA1,  caps: [reset] }                 # Nucleo A1 -> Nano RST (open-drain, pulled low to reset)\n</pin_map>\n\n<primitives>\nEach measurement primitive and the result fields it returns (type, unit, and when it is null):\n- freq_duty:\n    - frequency_hz: number, Hz; null if fewer than 2 rising edges (no signal)\n    - duty_pct: number, % of the period spent high (0-100); null if no signal\n    - edge_count: integer, rising edges in the window\n- edge_delay:\n    - delay_ms: number, ms from the first from_edge on from_pin to the first to_edge on to_pin; null if to_pin never changed within timeout_ms\n    - to_edge_count: integer, to_edge edges on to_pin from the trigger until timeout_ms\n- logic_trace:\n    - edge_count: integer, edges in either direction during the window\n    - final_level: integer, 0 (low) or 1 (high) at the end of the window\n    - edges_ms: list of numbers, ms of each edge from the start of the window\n- uart_read:\n    - text: string, the bytes received (undecodable bytes become U+FFFD)\n    - byte_count: integer, bytes received\n    - framing_errors: integer, bytes received with framing errors (e.g. wrong baud)\n- i2c_log:\n    - read_count: integer, read transactions\n    - write_count: integer, write transactions\n    - transactions: list of strings such as \"W:0x68:0x3B\" or \"R:0x68:0x3B:6\"\n- analog_read:\n    - mean_mv: number, mV\n    - min_mv: number, mV\n    - max_mv: number, mV\n</primitives>"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "signature": "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",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_016UHTUUMyKnMkjHHJB6JnYZ",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "plan": {
+              "schema_version": "0.1",
+              "assignment": "button_toggle_llm_v2",
+              "description": "Verify debounced button-toggle LED behavior and Serial1 ON/OFF reporting on the Nano 33 BLE Sense.",
+              "setup": {
+                "reset": true,
+                "boot_wait_ms": 1000
+              },
+              "assumptions": [
+                "Handout says the LED must react 'quickly' with no numeric limit; we assume a 50 ms button-to-LED reaction threshold.",
+                "Button press is simulated by driving D2 low for 50 ms then releasing (high); 50 ms hold is assumed long enough for any reasonable debounce filter to recognize a stable press.",
+                "Contact bounce is simulated with 6 transitions at 2 ms intervals (~10-12 ms of bounce), a typical mechanical switch bounce duration.",
+                "100 ms settle waits after each press/release are assumed sufficient for debounce logic and LED state to stabilize.",
+                "Stated limits ('quickly', 'exactly once') are graded with le/eq and no extra tolerance margin, per the default rule for stated limits."
+              ],
+              "not_graded": [
+                {
+                  "requirement": "Implement debouncing in software without blocking delay() calls.",
+                  "reason": "Implementation technique (blocking vs non-blocking code) cannot be verified by electrical measurement alone."
+                },
+                {
+                  "requirement": "Comment your code.",
+                  "reason": "Code style/comments are not observable electrically."
+                }
+              ],
+              "steps": [
+                {
+                  "op": "measure",
+                  "id": "led_off_at_reset",
+                  "requirement": "The LED is off after reset, before any button press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 200,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 0
+                    },
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press1_reaction",
+                  "requirement": "The LED turns on quickly after the first button press.",
+                  "primitive": "edge_delay",
+                  "from_pin": "D2",
+                  "from_edge": "falling",
+                  "to_pin": "D13",
+                  "to_edge": "rising",
+                  "timeout_ms": 100,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "le",
+                      "field": "delay_ms",
+                      "value": 50
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press1_uart",
+                  "requirement": "On the first press (turning the LED on), 'ON' is printed on Serial1.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "contains",
+                      "field": "text",
+                      "value": "ON"
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "low",
+                  "id": "press1"
+                },
+                {
+                  "op": "wait",
+                  "ms": 50
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "high",
+                  "id": "release1"
+                },
+                {
+                  "op": "wait",
+                  "ms": 100
+                },
+                {
+                  "op": "measure",
+                  "id": "led_on_after_press1",
+                  "requirement": "The LED is on after the first press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 50,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press2_reaction",
+                  "requirement": "The LED turns off quickly after the second button press.",
+                  "primitive": "edge_delay",
+                  "from_pin": "D2",
+                  "from_edge": "falling",
+                  "to_pin": "D13",
+                  "to_edge": "falling",
+                  "timeout_ms": 100,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "le",
+                      "field": "delay_ms",
+                      "value": 50
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press2_uart",
+                  "requirement": "On the second press (turning the LED off), 'OFF' is printed on Serial1.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "contains",
+                      "field": "text",
+                      "value": "OFF"
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "low",
+                  "id": "press2"
+                },
+                {
+                  "op": "wait",
+                  "ms": 50
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "high",
+                  "id": "release2"
+                },
+                {
+                  "op": "wait",
+                  "ms": 100
+                },
+                {
+                  "op": "measure",
+                  "id": "led_off_after_press2",
+                  "requirement": "The LED is off after the second press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 50,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "bounce_toggle_once",
+                  "requirement": "A single bouncing button press toggles the LED exactly once.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "bounce",
+                  "count": 6,
+                  "interval_us": 2000,
+                  "final_level": "low",
+                  "id": "bouncing_press"
+                },
+                {
+                  "op": "wait",
+                  "ms": 100
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "high",
+                  "id": "release3"
+                },
+                {
+                  "op": "wait",
+                  "ms": 100
+                },
+                {
+                  "op": "measure",
+                  "id": "led_on_after_bounce",
+                  "requirement": "After the bouncing press, the LED ends up on (toggled once from off).",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 50,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "name": "submit_plan",
+          "type": "tool_use"
+        }
+      ]
+    }
+  ],
+  "responses": [
+    {
+      "id": "msg_011Cgt1NuZid3ENSUUET8R8S",
+      "container": null,
+      "content": [
+        {
+          "signature": "EthpCscCCBMYAipA6KKgELBPs5I/RHjlDUvhCpNT+H4Vle0CakXbK89A0qQX3Alf4JZ0C9/l8fFc3900Efo4TXxqK6aUqCmjJR46qDIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3YzU4NWQ3NC1mM2I5LTRjNzYtODg5Yi03NWEzODExOGQ4NGaaAREKD2NsYXVkZS1zb25uZXQtNagBieLI1wbCAT0IBRAAGg8BCGYCgTgDTzcFwRAEJq0gAjIEEnHPJToEVHK130IEWH9aJEoEkspCvlABWgTZBeFWYAJoAXAB2gFgChZwcmVmaXhfYmVmb3JlX2Jsb2NrX3YxEiCkKAryyCWbdBoumA4ryUkOJ3ykPSHYixt0RdrZV22bYCIAMiDCwBPIapyS4i+Wbz2GF3aPi3pEyQKtzAl7+h4JivtOH0gDEgyUB9LrSIod+woNRm4aDJu+fKp/FO+d82J0qiIwyP9VelmGZtcMpSIt/t3hdvrAzCsJ+BbsxqJfnGtynJ6tDK0fQLyFin+Z4Ncq+XmNKr1m3WTQj8S3W86y+5JkimRccA84XKPwjBGoJWMGMjiQKcUN+tKpG3H0HbayIMuqpJocWz6hxAWj+LPR3lecPIzveBklTmj/1X/a2pgPyg1oFYxSEDH9V3yU67vl7OjnMr1GMeVToqagFRWwHloNS8ETOysQY0cxn8aTEZjo9pOo2HF7zbbd+WOeuqmYkM5lXsukMrRFrCYLpvmYelwo6eSxNpddJE6hCE1zk62EcLRom5mA+SRZsdhyPN4+FY4OW4QHHLu4zwKdWHJejeItNsW54NpUwV3QCSg5b3tzFcwCTeDETZwCtC2s0xp4PTEU6IxQudh80eJvN3MroI/n3SkHcLKEalKffSemxICc+W/w/ga+7YEF0g7lFSUeMLPnsXbHcBQO9Kj6kOAyvTK6upRZ1dH8Kmt4su3hVkxJQx/NBNSi12QiQXKRGdTL/h5eS1FRwA7vnWkiG25RdYm1i/qGQkfF9r/I8oagu3V6wg/iAmO9iwRmE0IbvDZwAGE8/+VoVp08oAqZPfP4PFrlS4ckV34Z+9hJK7jS76MAe2QJSCb82NXY4Tr5fdJres/pPwzjrMa6GfcgEUv3TuqZ3Qnj0FvazQZVornNjhLdazEseAG1bS4Cib8qkxRmYp273tRYHHTeFOuf9nKrf1xVb6lKKa51wPKC5yE793BVCWUmLvmRlD2TaaiTskXMP6BfAnzoo1O2Tl6A1zmPwfnMjt2Gx/mm8WgMp4GGK3XJUGVOegfpDH9fZgijKceP21Opuf+cfsOmjOY4k1fvSDq1KT553G1kGJePz0/qmgnsfbMbwbWoCbT0TcwsAed6B/+1ZJa2OIig3RExsd5/MOzw3tWILbFn5mylzlqCxBO5y0PX3Rj/et65cIsfkgvvDWAG9YhkNlcM2PQxrKGNNCzNmHidT7kREISibrJv6o9LU6LoIykc36HdYMtu16+KRgz9CDp7PeQ2iMqCUPZ6UgCiYdpnDcKSZ/KRltyoLRVw83Sa5e66o+tUalPEs3DFd2dOdaGPMJTHtA5ZKXYdSj8HU7nyJu0O6lL5+fvc65TUE+lh3ROiDgT+GRXhG46Sw+awv43aTXmUug+BZD2t2Tbi0VQlP4xvwLWPMMEdVUVvNU0PbeJU+IoOA5zdOtOlAlWIRSeNJ5X7VRe+ehOYGsRX/N8cWxC8orcBhrw/vY8fVoj8Z6ZuUy7+G9V87pT0qEHGstEcpm6qwqhqN0R3FrF+WWkUBo9oeTKbcGZ98cPvAwwSCtg7ZbJduVz0vQqj9DaTH1qsWe0nyrWd7JjJ5JIy39uQgi0hhEXyBAepdki0Cru0DepQCtyQBgvlSY3bRlSCBajkFpjM4Jm4vNeeUDQSIjNJSpEQKfRpQv57t7s5XpQ1b7fOIsvPki2/tlu1B2bsAd0bpS9M8swXWgncid08foG/E9So4Grx4BZiNFDC63VMxLenf+tswFPvUG+9WGm+2W6U49oRDH3QaIj8M1M25/QnNSXuUys67mcVV7lC7dv+aKNRrF9U8J5UY4zZW0/8dCd97ltIXNTvGqrj2glW69RrxMmxtpKTHqWcaqjbwOx2kAFUK8tWL2I6EHd0UaX4Z6jDa2jJAGczbwcJGa8qu2XwGadUcBomuf8ipmKzpuz3jWJi9m7kgQ0UyShWsENUecGl2DstrsXc3/dJHtJpacvMqddrRBWnas50pTw5dmx7eo1DO7dU7BMYOxAkmTc+kzs1zTBaherIQbBUloHb8iLHfepPX96avjGn9RPvwY75StCvO0eBTujIFrzI/z3wfISG8Zd/4Sh2V9FvWNReCZB0Sj6pKwDl+SKUccG89HqubLXc8Gs/MsCHpWOMllQqJ/kvUz8Foe+0NsfTEhWPRQxRhbq6bPy32UKLI1KXJmSmcsEp3H+o1W377IA8iQFbwFxNcdbnZNMe69X98hzBZNkrCU6zgJ9rRpJPWfkF7Orw7tjcs8xDqPBXMcgHB0VMwz2fohaa2Wcmv2/8mXzYpVs0vpj/DKZdUGAeIIG77X3lmNYAeiC0Pa8QuLRSUyvh84f0qIIVmJmpHOCcLXQHIiq0lXWQnKtDdO+9TnrXGCcPaNOMiL9G65tt9Ruv1BV0xWUCu+RwsATcmKYXtrTyK1RqI0pDnOp54tD4QA39jNw8cwoLH5oH+9k13dgteIp518N4+ldUzLijj4fQO4nLXBD9S9gzUn3wwBxgzhlBDiiLpmWVIMqZVxRznXrocPjE1A+QN9mMkZJG/9fZ8BVb6Ya+oNfKVmQXLkJlHcweaXw9mKDo5P/VWuVuNpEtXHNQt3BsmBeMSddwz5kYuk39l06yf9LClHA12/aoxkKzZKCbKd5/a8DdQnUoz/U5UwESeWeTAJey3ibcSz+k+lNO2fY5eziLtB99xsSrz2gjufb3GDFrYJNYRUiVIUxyP0iseoQKPxdFbxi1NhiwJ0aTx4X02kIK25qXUpqb6VQu1HxD2zTJP0fXbwP+svyMfNnl9QUXpQ3edaSwXDyfzoOEPUoBWaxUfYtAAkU5ZhXk97pJRk9/1sXqBRpfL/x+ajsYsKsaSEeVHsw0CYiDPppYOUOZ9mP5ThF9DXNpBLt0EbH0Npn3GbrsmiAsLJEDDc5Tt4drx/MWr0+2WFGDtk3V1zxQpejddRo2uIHYlwGpyFGSnG4PNMDag2hE2czxg2f/mAemDHMQIoAdqqbbKIDCvsG11jBdmGiWKm017LodHU5HRBmBYKtGl0GOP00vLF86HhIwjiElNqO9x7oHrwlpWMguIfpvp1Kkawq71YbyVOvcXDMpgtJR+MGKqVqXZfVisYnSBK3XCdWgI5g2FXDkmEjgmhZ9ZbAseqvbZhImfRDzq9gGN3ySNgvYQPCFl/w4r/1qQEiMbJ7DN9kXECDxPNenbTwqkIF3jmi/mgLRhXW+KMYifEiC0Q6XHGC/c+LkUxWNQr1GYIrIE8136t7EaUOZ1HRVpqPY3FTWhISAfhQpHxPzYofNl95BkEzhVeQK1W6lKzyEjqcgmaox+yvLIv0iXcZC83juhP3ksQrJtflAKT7WCHqK/3O4of56R7w+19agdWPF8DVK24quDbydG3oJxP+FWKn37mZ+bcNAArBq7oE6R22H8UwybbvmvVfv+tsdHRRRwzisAm5OnJ9K1BWOy3xmoUiexuuW3PzKRgSbR6xj2guiZC6MLx77AH9RhAsjaOLZ8PoUlaQSfXBgZYb/K8DbXvSTrQikMOlHEUCfy6QjrjDfut/KDDsJ123J2/s4D0tTPU4VgLDU6JTnQpJZzgV3vsCuqM9Q0Hn6obl1m+Gdakj8z/yzmzhQLgCD1DNfJ+qBzRZWWCo9C8nFFHwwec4R12UP+ECwveNshCFqFt6sUm6SDumTDgP5wLWFPe1sSsZ4DL5CHpEdaSaWQG7mlwWGR1T7doxhM+AFXuyTy1CElKMvWDZlmVQdJXNoPnSpay8rd+YCwDxK1YP5N0Z6if7gNMLm05PnF0Ga+K31h7pd5ywpDOYyFZ/YQltmk6FDcN4Mwe8vXcaxzStThluP1Rcx+m7ge7+wAAW8QaBuXvBPsU7DifcMs1bdNsYIh9PpwoF6UXdMDyh025tbNlKP8gaBF2En0+VTW5Zjy2RaKPMCmEtZDwNXpax97uRkU777Ezg28+x/CnaM5eb7UHOFVNiIB4MLGKpPUTUToRYJffh3Wmp0ruVx9Da50IiYI3UmY5sXGCnJjXQWDEumly9tOUMDlHtK8fSJmMCtii7JCt/2yvDeogkUOHPk5d9+GlSytf0tPCfdTnXpnV73Ls4Ox2RVrWTp8VkLbAMaETGfGMEgTIO0sC9+VUp3D86dhQF05mL522C9nqqMST6yWamZltx/rwD67IGi+Kx704IvzVVVaDr+BKI5wCX2mQRn85u6MH2fRd380DxPmvgFDWXyq7pbpJHYA0D2/GKb30G5JMCH6jh9VKuIOwh/qNkD7i46QUT2b3wDWBOCAB8E3f/+T+N2bPsVMeICi/gM9m9gEHHUnKEmQvrEK69REhc9P2lR5jk+/WRSrL/ueDexJp+/qE1A5BGmfLtAbOHA8p9Q0glprQvzlelITW9hBaMWlihGjEwHJ9NoNIpx17KQEakRuvEbEruLbBPHMkgmRLuVZEWf8YWrXFO7S2uEM/efkURGOxI4z0sGBtPz51A17EEtKeltcQVR21lGSYuNlOym1czUR7hAn4WX52Q+W0feOllMFLGp2v3m+XIypWF9oFUb1Mkp5xvThJEQ+hanuQWoNBXioMsGTnP5KOQlgF8eQGmEB8mCf8ildAgFy87TtgCtip/9jjbXoO8y/v4NscKdxNenQI9NpEzjoZUrP/+HpcEQAXodzE43xf1hRfeTyWx0bvl2eJ23nz4Nq59jcVUTP6ve0EXUtkVEbN8auBmXSHKKNQGMrlRcf3aKGwhJ06WM5L2r1+Y2wndWxVRJ5N+WI9OXV+3j33StDkfji1EmbKcDvNoo63XM5HcxTFyoHup4TCBYJa3z2sS5D+aiQ3q3i6sGgawDIiNRAt5XB3IpCJm+JvljoAOe3fFtObUoHnHv+FcQ1a7s2eGfMcdLwZiN9ndmMrb03gD2W5oXQjTXd1EfxUrQAva1Vq4pF2t9XnM1toV5xMJpV6IV3IMPic0gE1Ot24XJ8xBUKQvvkISsZljHbf9qYZmTaV7Qut+5aHf5xAU7CxIc2a3ge8kce4o8836F41RQ6mieo3EGNTBcCiLgqm0nsF78xBPGga0JddJRvncei6zgONDOXRFsG31UPrPwg3Dc9m0aGGp5EF6Ft206fCn+9qawiH3HtxHrRrq7/b48LWA6fldD2J+G6aQlsx4bclDSB3y/9h9oy+kRWdGC19z7yk4EUeEcIcKtW+iBBy8DsWTD89I7CrmL7RPJkwjqypUuqMUcHjMr44e73Vzf1Sb2cXHUC8JLHF8wj0xeWgJ7ZYrq4qUceP7nM2tsv2pQ8U+9sGdJKWQEs6G6LLkmq/Gm66hJgAUIxacdKn8tfxPQA0BKMeMyP4rWcSXnAwkLC3b2IMvp0+ezpu1FcAMiUAw6l3eqBW0b5xRgkRwud5lADAlTPUmgJ/onybox/2nW6w6Tx4FtTVffJXzBxiXj2KhcZaDpC7DYd/gaET3NwjQQP+Ltr/3BjJ7uRaQG9ZBUI4RK9fTj7dw/Z8R22Ku6TO4MiY4kcPDSuUnydZ659cxOC8us62qOvr6AFAa0d/lsnEkLKnrs0mCDYRhSEFwTfgcje89sRgI9jISOh4njh3eMzTEEArP9e08K+KszrzAA84zqFWOC3gBQSH2zE/lkGX4x886TxO+3pDSMceVpA1lFAHfHYTj4oowa8aTXdBevDTvMGm0JSKSzeVyydVl0zzvYlaoto8Efd6zrS+ymsRV5gFcqJbwEP30/liS+EV1lva/11iTsh/h5wzC7NAnv/HV7KYFNkJ4Yduxv4M+1BdVQ94HZmHh48rmhk1eLbbfH1R4KMCTb+Fk2KVo0DeJR+ciSUnASwfozymXFlM9h76SrasQlw3DKBnf7l7KgpxVd5ggZSZWLvKw+dZb0a1TbRHOjQ+D6ktfB8ymg9TAEXJvJxCIuWxMCAMnT0r752fZTot3PdOfK2Sh0/xNB738Nx21fnxwpAfq1RazdhJvOh1iqBTqDjuVm6Jb2uksncFk11g0AoV6BafEU1N4vJw+Xr8e1hwvJTXwO3fZrJpCnNCOALIxVzK8mx5IyuA/G3iCcufZDVD9fnQi2WU9In88qKLEXYtwOsPvRwkRUX27NWWuK0ZrhdVbsUku5U3egGPBay7RSV63cdGCNeZ41F96rs+q7dLbAIKK+LH2+43pF/mpLnSm6dso/nOoTnTJRj0+4efWOfTacX694PJdYbVw7PJVVjSi/IaQRf4bXCq5Y886u+NyiVfUu34gL8GLi3ZXbdLVw50d/UyXMoF6N4Xnt8cvkGhjv51+3813nMyZNZbTtvr2ncEwq0cB7QbVPHQ/l7ujGAzCNQOn7K1fS5PzJ7s0ihPOFRaZXytRecmvIOCo8jsaiRkkpbCbxTmuJ7nriVwkbSzb6vNTLHgaenCDxV/AGVOe8DUiCcW1BZHDrguF4jS+UxX1Zuz6VnPWgqOewL7Zx9rQuNOlTAUdwp9gKsQ89pARt0Ii5/T02LwpAXJoXHXx8/KvxjPIU8MfUKiQn7EKDc8OUulz1JeuRhLk+BaRTDtD/iueCioqjxBp8wRTefosZbyx1KCCTMRF8I0iSdPpS+dmHMyOo2h4QkwgNc6c8LW1w8J6TNRR6zNwNx6kByftGt5ocjd/MdsvQSJQpg334WBGlRdyO91MzkLUEQIqVyUlyhgb7GA7NKBw8nR7IEhH+Er+kBt+qEX7z+D91So68NyFnRC9glHKkMVTep4CYtixfKGutuiolNPkpB66+RmcSFBIcKSj9bq72T6UVdFrO9ucsFBLATHcoG/sroAU8c6lSMdYCgGjsRZtmesi3RHqvKZKC+N3EqXANkOyUQn3G3Je2CM/Mcn8eRxuOvC8gapka7fdA6spIm5UV269S1vMZuX0JhElYxrWNR90sX73lH+d9e6BXuPZLv0Q006RGI/2s8uQ9mrwRHxXbDFOS/ZWTF/fX1ht0MhMDiERAQhoVkGxUyJgKd7IqfA2EcDE1e+BLFINt+tG6OPAdqIykToccRq8lHs0K1kjNAhapQxYwNs5iOlT1+eqBMUbeFKI6EqtEoBx/0uH2Wl6dFaJwsa+jsMcchHK6SBdbld4nVp4ZpLqP8KILfJRTbTxHBn82zjJukX3artjyN95zWFk2EBhUAG1uiaJ8U/ykAbMgcgNvdPg51FZybqESBrSfmMAa1GFkkBmbd2+Uwsk/CImxWOqwCeidOHx6gOlxTKLDL2Hq0vLWBojnnyCkH6HpdhCDjS+KaunrhBnfyaQSUoOWnHfpiBpZR0InBU++phDflYo6pXHO4IMxpp0xD10nXzyL1+LoSi3VFCd+u39TY09yK4ucDkR9JN5h8/GYxV1/x680WNh570+P7VETLz25CbNq7lsLO/N8K/pZUzVpUa0zOkSN3A8lOJDfr/BbH28ExW7dsL4IqURAFESGQMuTt4pDyNMSTKovpnlUiezM7kuU9fvHqoOpePwL2h496ppWAsUgHIk3d7vHoMwpIEeKESWcGN2KarXMicnc7D9QAGStISTJlc4c3OXSq59B36zmzaHPWfFK80XMLayGXpFoDOsNbVLVLcEea1rmdZmL+pvXJsHOL2ggHfhsWN0RNTiFbvzql1aXWAXvJEZWs/n53ioMsbf7xNseoop2//V/34hKqokOO25Z+bif6iFRYMGqBFx/NrSkOfIUUZrrljW00o74uYsZjDgaGzIMeLZuTS0QvxgD7GbhBzJp6TvkF4NpvLRH4IF3D+WfcjjTNJSnOdj9saHwpM4HMaSYk0XyyV+EaKg8UR5mqKq+X9/JMcq54okxN+IMiuGgwCrwZesgw1T2ygbxvqSTxvlVyWoUC1+8nHizy59uS07fqv+PNsJyUBpBfVdPv0E5bJHg43r5T0UHyyEsaQcHXJBPn2CoUW+aQTD4zZQle3GZSZ8A6zRpyxUGDEVK3jgEYaQCR1TmpD9kQxwHiwJmiLXVXYlQQWY5SoGiqqrizmguKfHmyWq8FwhWmlpGeMJRRvfJ5t7KeNtmVFsTdc57CRO5HRRlO4cg0/y1elgqIW3Y2Fv5R1ic9aWzxXx0aOHGuYvbyBiBhdXjEvTZyUmwB1WDeyc0Cal0BUZTWKSXCQGYyAopLLsqkssz1AD2WbQ4gii7vKyyTP66iTvqmJsXpZQLujpyjr/2O5UmCq/pCn2sJkGi95aI1vhWeZwIq8nS674jzGCCbW14rSVP6Ov4GmNaSzavHkZiLbUurjibBUe803Ws0y2DQqzDD+HSl0MPnxS94k8ytcBQ/wXLX6wp2bKaubXcGsRC45oBSiJFqJVXIoc9LPirnLDdv3xHnlyw/IOCUiEzYJmG9+2b7gzLuPPKlrnyVPWBJixL2HzuWah7UVUy+JrD2usWBGzswK9STo0d5t/6MjtkWODhrEG5EIlSk5yQ6O0VPzsAXtE88lmZa2xSgMvz99zrEPBhB6Igj5gc8Tgm9t/A7ZRikvokPzH83kJ0o7oXdRoXbc3JBjGKmeCC4ZaLK3MeipXN7SmXj70uHDTqGxra2Rr3eprWAgAgE4YlPZd5BnKEI16xbm2ESAHyzROT9/2nIFstMI6Do+quzD/R9TseRJ/AkhYhhjI7qU6OI9URaOX8yBvItTqJVT9gHnaG9GDBK4Mbq9EuLaNrblWY/r2eme5rn7MjrljRHCP53I2ddTRP9pxS1IJBLer2V1uBNR8ARYHdQzwlENNkpZqOXDHiyGgb4gbq8hBHwHfPZFA+u79x3mfsBccSUJZIXR98ayajEaxX7Mp5yD651FdlJ9L+HOjc3kJBSSpnDzf3rYGwyPKeiPKkEDGGrIZRcFEDk6HY8JUrUoIL3uR3Q61fYiT1XngASjlaU9UNgq9Voou+S0RLcruTosf9gkM723BjCGd3nr2Y95VYkNEHvvYfGgEgUSlFPQyUDQYQkwafMG4CCcitwH4cosqZU1Iow5ReWB1qHxROmo6QEZj7OPP8GLKnlAyGWyB1/9lOfeuo9u+z1YZrGiWyCymhTlwLrBqPcK6fzJ77XI3cRv4ThJbmOy9WwMQl/pLSiN5WW1eWHV5/i++ARmmbyk5mAD96vPP8rdf5jNFJ0+CO4ZQwpSVXkeVz0+pA9L9KD540ozcxjqymCmxATFjnrxfRnLPiuU31KoztjwFiB3tNKcJugPgMBgD5CUkMaf7ziq7A9k8uxaLDdq/d2TCkT5P7OWloQf3XWh+SYX+g+XnE/9gyoLEr8hNkxzIYqbA115UQ/UtqTeKEPzyl1sFn8R7VZXJYnCNfbLNpPWhvPIysgTQYf8+WINc/coUdGRVlbEW/eeMz/AjRlkGxogtJ0tfK7nywes/qggYjAITwFtuIOaP0/vw5t01TKGYKAdoCSOs7TPOWYFDOUeiNOwyArSUN9sDvlsweHsRdm9/9lvFs5Q98Ax0SFraZfOrvQjHAVdPb/6x4FsKPHeW2lchYgiXqBZdo2b5jNFeBAqp40abWVEmpMAfXZNgA/ygHq/GydMVFKBQn8M2BQq5+86ycQhnmXKf3cunDpICeiBI/wC6CGpMHgTozLOWYLpNZpsZwUEGWQbEBANMcsGqBxA/i7jeAm6DURAu9mWPC/DphLRJowXY45DkNLogjMWDQSXfY2A0rV8L0VA6U3IYIA0goapyQDusjEKHrIbvt6+n7oaH3DOiT7Vb+JtstwdHFWoMiVzCLTLe5uFYGD+DUnOCnTDmIVkUNS+IZ1TZUCrBoadVmQITXmJxvrelWvgx1Yt+IAy+ZHCJZEqTDqXF30dS9q69/ag4foCrPQaFYtt93xXQJXnjiht+jZ3Ddp7SVMAEWGmabdXOgHKInsuf+fB33N55sz/V5rgRft8bwjyFcmm3mRDiBcoLJgwk/DlnPYBirOOSuUjLKAkMn1drd83fVimnAh9xEvCKKY/AooeyroSWrfFdFwvcaXZeZStjM19MZDiQCTghtzbrfsjGN9bvDmmpmX580l000BHLvfMetjsWgHHBZYx+pamR5VmLCa9wAu49dSWu4UZ0jTSwIl2i7hdjlhynuaFz+Ad69WG5yMdv5QcSM8SNDoHduCuHoU0tgXygZuNgPon8D31xJcS2hXWTi6Grv5hL9Y3nOeAZwh3I2DVmlNpKXkrgDmKSPZB7118AtjbYI98pMpilBrfJfQPnb1LiLeoJrj8vYtieiOfwgCAd+6qpjZWd6Y04Nvcd4BuVluK2SdIsXTbeetpLowQcpo9Fu9Obw0PocATkMVVTyuoqSwewr58e5q/JlvwlztvWjZ9liLixhPAd+Xg2EiC12+V4RaxBjMWzHuzVsyuPTuJYdnysFOxgcDrDXVSgVLfDrJ30RRYeZymTika66yYaLk4pLGgxL2WCn1JzIWdCKB6eYXQB7gsd0vPRGMTIA0dZQlCxQ/PISJFbSrG9WEv1Qtw9uw3hUXpkaiDuYdxr7O3lx+WgzSUuKDM00Jy14eVPGCy3aVtYFViKZTYXkX72gJqSB/KzX0+J7ausUEeiaC+XHkfX4FBNHR1ApJjxaCW8NOos5lLEE+w2DWzSqZiEzq/faNpwWgQ90BV7xVenbHmWRqXsCDd1X4ddhCIizPgGFXZLkF3DOTHHj+UoHmJEYMa3cfW/ch/lmFYHkdFIavi76Mwm/HQuO+AkkWOfBzJghCOSkqdJK3G24/uix0XgxBHr9Z3oEOmM3M361khb1mUSYqoEAXzOwl94OtniVDTyTPKgtneI+jgZxASRrP+umBSoOjcLCyG5cE9H7ok6kvy6dqh+Fb8Ibt9JTOf3VfKySbfUc6KyEqUbKYG67wZny/W0NDoqsfsQ8kO17Q0r1/XIiv4Y/te9GhooT4Tn46GOdFG9xqR4p80gUAHy4OqiHxd4GBiM0H/+Z6H9nciyuxa7whxPdrY7ecIheuxas1NabbWJQHaT1RWm1VFSW7DPo3sM8LdwFzDAxPcei1wWJRLoAMCxcZY1XjfjZfeSY33pESafV1fb0DUQhk9z38EIxZ3PPuuRckW2Kz8qaQ8kgjC7gBCDxwblEApshv8tquftxf0OVnsXY1aEXox33J/RQ243sungqgWCtJEnZfjQu2wEVjRAT5iB7rqx710EAQMAze1QXU6+KDCR3j8sXvkVT+GV29K/fPPgVGEQ1YQlEXJ3xwPd85aM2GAliH1rrQnRAZvipjWWZc57kGLcDQ1NQ412ddzuDpfDXvQ8M/A4fm+/CWmG/+aFxds00m5podCn+V4HSv1qJdq4tfiFdxahUwvBc8gKxR1HLe3VdXG8svgkGLGG0V+78OXpVAmHVBOs8aMwzmBeLT+IORa4+K3juj3PLaQ7U7zBmwy23puYuzgTyN2MCDByE06hq3Yov0y7KOUOpZlfaKF0hqVvtFszPx1Vfjzt9PIDxq4jbwB5t9ATc2aGiAFEhUy2F1gOMiZVOkl47z1+f0ELP9qjcvH1fi6RwYCHpPhMcqnBxsrWVuvitTCrHxuJdokZEvU3BNECRKkecetHRvRUhYlbCpvQCDYcpG5446PNvp39l7jcseUjgYpl1Aowm6d2z2kH3Jpt9cv5k66kfTjo8AN56Af09MqFvC4bYZAJ9AIx9LEzz9GkaBBqeYq94dgykZfkQFm/GekAirjtFfHhP+bzOqIioSpywPHgW0nF2WnvuGbzXJpcwCh/WCS8E+IQOIRWiXyqfy069NZbjWYmsFlaYYLGWpDrI1J303udmCgZDmaIiTMMPKIKsVEPPYLdGMKc1+VQGIVxOkZASYjPqAcR/cZKv+wkTO7NMxA8S+PI6jj+EaoK8A2OVeiUonYvGHbz7rjxuzNV0GMbUch/PtqGNj7BhRME+pfn3GcPTJR74UucrYGi16zKciDWwF75yvhJfcxsX+BzgGfx9E0RMpPojIa9lPbXAAhwydphmCkOuZFM2RoiS50zATGH5OBn5cWVX+c0FGqk2T3cB7K2LYr6cOyuzbijkturI5JzsIBK5kDny/Txj2pdMMB07zPKyHhlwz35yC0QYu91F/yH/ZXj5HOJkIDUESYrZufhfpHmPguZgIFGOsiWxOzYuvhUQmAH36o1gyqBMhlWDWh4HbMJJ0b00j1z8VQk6QVMjj4Ss+6zhMqukamltt80mz6fuSbanlAFARgNz7qHp8SKriMn25FVJzAbptL0Lima5dmIa5tadVR0mOSDgImNhiVXEN088/ttXK8JSsw/l0ItC8CR7dwCo5QqIlk/U7n6J55QKBgX1OCamTYbO8qgKeTmhIAdgWORFr9gsrJ/54YvugxwCAQ3qyDi5AqJfRCIcIo6tY6fZkISvstjlfo5wYSMnhCiCM1YX8QQGvt8TWkRE2EvMcciiLGLNM3Bdaksu/Z6GvVe/JoRnMjtMKyvrXIrUUjcynXgIoONXXLpfJQeT+nXaO3Ejb9+buSR0Ub6s8Aj6n00jjGaWhpYjtmkKVi+gwJc1Ct2FuWbgwPfvIAu6U5q5OVHKi3rCe3L3yZYqG8T9RnBklIijBLSpWtm8AM4ARuFT9pKTlSvg0GTZuo9u7OdyF9k3oppOHw7c0pu8cSnfXywaBu5IbXMGMcbzzWJVTcJyfmbQLrosWMlr4JUm+tBHKf8s3UlrNCNpr+xnDcUCZU49wDfU2YYMFGZayNG7so5KhrjVBBYeWUhoXClB5MAIwtJQ/Zw9EuOqvn7SHG4T0UelSfnnrFjVEb3fA34k596Ap24vGYjKbyYPmtWtCcGOXBe2Vz5FGBnVav2/iv7WydNeALK6U1R9gyHmOrTQjiEMG1r6KH/Rh5B81xg8sCtaS1w1sRSk09wOfH79yrLLavWJyWMav0yUgnqFFUOpVsdnkx3XL0sL1cmnA50EDKPzN39y6OuPv8GXduVb1BDWESbWY72j4jYyBn/48jxRvkTfijLRJ2eqv26wVyb9LVgOKIpq9IFZN3Pn4Qf7APeRvlkOkGgHGnts66SQugro8h69VQUJgsyGYbfJSybueJG5n+tkMTgH58Y+Uf7BfA8smiO3DCh27IHlj5V4+n80KDVCcp4gXN4zByhJMou8A/wMmCGBDG6yfIbZ2GhYKfkJv5ETHXg6S0MglLzynOMhZ2xQaHCnq5WZNNxEjrsc5ACQGnehJHNBoNit4V3o8jpGee8zUDpjGlLyf1LhwZ6LwEQgEWbwNnCPvm5G121TcTNYVy22Bo9Ji8A+Se1Zj1+THQhMs1nKrXNQvV+lSq/NK7S1Tv5WrVUUULmzXRzo4YX2RsYpcDbmHXc314gQB9M4enCUXkt548rPsALotL/Bgz8ZpN2KLlzRv7XSClaHeYgstk77CpvE9e0QhL3vIXDWaO7qNOJsTb3GD42CP4Z1OZgrVFGJJm/IKzDczYxr1/5JvA7BRpDKU218O9Y3HYhWd5kEqblplbYHsyNsmgNviaaBho0CjD4yTPsrPGHsVXKXWKm6BMkg3F40QZZUb449CdEnqi7k2LGIgIaeQ/mUPHvWfOowH9no2JxtKfTMj5yRO8Ur6/A6fV+tnfiQdx2bmlw2zXp3iA9tGZlJvp8VSQkVHkui+PPywiL07bufh63ktVghiVtb5EX6j8a3QjKP2QTT5GSL6t1GIJpnsqGfOuLHUiLmQFILcF6onAbjMo5nj49Fyw1HNyt3Snmn2hsatr6Ypxl9/z5ndnRc7XdrKkT0UTUMQw5Qsz86J7HEdhvfO9rev99VLYzlKtpzAVf6uqBoALwcIqdTEuYDEQBVgwY3hbuVztvWWEpmtMmS8FXTzZT/mUdATFCdVI4zWAhI6aFE5fEWwNaiK0oFEEN/W+OqvWfxOQWEA83KidbB/NlVtv+3yP4ZUsVDTqKFmD2DIt+r7N9Qsz+wDDTX/7PEdW70FsFc4q4MthlqzwqdUe3JwvHQJcc2zAyoicQVaZvofWEkCB44meDRcwrb1L7XlGhkN6J/zXeknnM5g1HDzFs89bM2ep2ZtgQkXB5hpjqEKLgkUT1gv5xxv/ii09mdKZcLs1Xw5jKewmxTA3huhq0Ayp9UtMZnf4Vi86xEW5hqLclwEpNmEyGjezwBRerPeZBfg+lTp4OsNJGDq21k7BKweVIQmsuM7xhE/dYWGwiP5LF/MlVH0AGZ7WYD7lHbYfxloO1lFu1/RcSt/NDl4BsBfW22GG8ukfw9pSg8LvdOA1GCk0tWfr4s3RNI/0ckXuqBlGubRw3u22poykCDDK5CprwW49b4X/w8s5wZ95cWOROZroHAK5OPrUVgXdrD+VFdcRTXnQUX+2nwRbU9TKWxZp6RrPGiC0Ry6u5mvEwPHoAWMtggEysjQWZ68Q00fxeZDdYPsn9i/dIQEFJaEJKTvmvHg0TtaiR8NDBFiL820xPmZXUWXwlZlnPs7/9sjuhzgF+QM3f3QNkY/XW2RYaW/OL7aPzO7S+99No9i3UoTTbJTivb0Vludi+3/noJ52LGncr7JVWQ7DP12V+lKYrJik3dCPUmoc21a5NzQair7UWG4BLuV/d93UOxrPfvOol54ezkagKdorwKjuC45Nt/yWReYIT/KAziS6OKfHZokTlvvmsuljvglAQOC2WmnsKXqX3aGwvajEHj8jI/A6FkNdZFNyiCUxUlEn1e/iiaJw98TlMWSyaBjzBSjkEqYBCIPjvJ1I4NOBU2rNqbkqC2Wgs31rlj6v+t9RfLnAKI11jzVIZACQ/2GHKQnbXvLE6IEWMfI84FqYdxTS+VR8s6G1PKHHrXhhOXfqiY8PyGJicahaW7GKrd3PghKg2+R7dsRJzTvrCrAboGqSgi20vDmLt3BOA6pbbe5YpkxfRGAwAbLWxrEme7ZX2gd8SMAodjJPy8ks8w8IO9LSVsTPUdNGSr82vbm1+JIJuKq72RLi4R4VhPyaFKPSlIvFjgReU/wk2PVB464EYKQP4lBonDjTunSCAbKdq7mEeBk/ziHl1NycsbJPoImXlgfPErP9/ilDJe5ShmWiL9OeUpsDmr4IzFUvkrZeUvV8nPF1VOtTtR9uFVhzFGgsW/KkMNXSBul1uaYbEC8FB+5KqGgDRkzusNd2ZUrSjDkujcbyOGDJNPZDjy1XZnKCjzAHRgNnAX02PuLwMUwn7girbjtfii17eTHINj3lt3P/sDY3EZo9rQ797KP1mxnLiYMg3Tt+Ms+sGsvGbbsB91itDIuqxLv0x46wypa6WPC9a2PlXBJusqjwzb23nGDabnPCkVysAsLgAvIQBjtk75fW29WNxghytZOZQFQNOUTOuLyXfcx0ntthsCUfaMRj+XYD4gJIy/qgaMeAcaDe24JIa7W+4laWH9KcWtAsdf2ALAFIJ5bxJ8F2cLS+UmXEL3covMZSO3dleDaVLXNLA3EE8tm5HUxZsAk6X6o0C2pBV0/GpDkTttJ3gaRZqZWLIHigj3Wb8IL1uqHPv1ez32TMpLF7E1FN2jX3GtKfBpHNfeBtiflNbZqlXRED2+YvF6OtYCOEtLarW1XWoD2m0XqBfXkDszCnJn9ECWwUGqJxcqm1Wdw7iIuZU1lDTrvGkqSmw5v7K+HPSMccGKgE5r/lzY8CJHhYY5ZrT7inSgimFlX6LhqaOzcbpUIT7vlIluby71ZN2FbuEh1eZRkejDPUtFWbYEPTfPOr2Ur9ArHYDq4kuBos9q4yyLiSXW1lKfoLlw55oV38AS7XvcAOuBu8gIczpD68FY7NSiBml/Zlo51fOxul6kUOf3TXXJ1YENQeTvB/7foNoI1Xbq62X06VRAt9qkuOxPgRI90IIR9F/K8ErVofFfTcs1yIqLMKnNJ1Gjn62YMLbwMEOf5gyK6PVAcDcjeP2hW7vk4GCwZ/gfgLJapBA9+rHHZiHx7Ay66TssAG04NfXliljRJREp+gwgRJz9ZbP/w7lOCROuLjG9BOlsLVZ6YoUlo97GoU1Jgce6KQmx4hAZzd1EKTJ2oeyH6vR0dDa9ORFOhrPAnk1b/n2R6atiCq3Ug4dVqd8jeO6Ly6Dj46l65kmAs9ISw8FMWGaU+lTFUmJHyYU4tCaLCSXLH7KEh4JGCoSfE4bf288otBbnZgMf1vDdgzrQtNvP8ZJqqGr2rBucI1YxAGKelE0DE/p/oYaSpX4QRye6sbupMfZspFljxkWlPvRJeQ340dFPv61qk/3UO+xmWc8tYhlNKTT1B78g+D5jUAUwfmhFi3FRAWbWIWKYfume0CkgJUJ1NoajOH0X7XM2lz7D6tOUdZwYZsosiJ21xykoQDHtNgmchYxbgxz9yhNjQhO1VQwR+UR0D7qNlPRS2/fekSMZImjfYDXoQ4suHAadZ2+bsQlDNiJF4nH1hWTINd/+1WC0Od0V2aVLVh5cdOzX1/06TeswNlyyN8t6HRR362av3ZcGOX3Sbfsd4pzNft6mUpxSyylUvbl04dgr2RxwfC8EvZy9zMDLTD7KKCxscuCSyEprNofPNzI4EoSnvsRxTz1qL++a/dmVCfGOQRm0F4TVWJPxxRg0MP/stYD6wjvwMekLH8LWF8fZwEXrCmY6igDVOY2N6ZCwnXfQVQff6B90c2skCA5kNkYGF7s6FGfUYHscHQpR7Sz5HPgqvqMhCLFOg2zqfD5v6vJLi30btvq+JKFYl9wKMFmDspQVBrlBJlGAlUlMBKsIVFT/c+lHIjqkK1zxFXfjKxWnRfY+Cb3h0tSo+GQwn1FIGMYNO1V4AmEU07pm6AfGqyZjYLt1uIXFtKz7uVl4rUVlVJX6Xgn14T2PfdqxFfaQB2HdvvemLHxBu5tdY+8AqJMkYOD871otPWVwSPp1KGX9bQ9vjgyUmKykt2nkL+VdrGVMZ6TMp0s1wihTHpoN7CDHnEJCvvXBy2CM3EgpsyO8fgKWmLf2Cq9H4C9Z1RP0HkCd/GwDQbrjPdGIxAOt1TzhJZyZ3rKmhYemn0qqdl7qihrHjoIH4V9Ep2cmWxKEuQVpmOSW40Hvv468jhAroQKR23JYZveXYs+Y9HaThYFf6u117K/nZIXwz/iN3m6ZRn2t0PEeKqbtmvPzj8Sn2A4IjMdHyB3cnaGztGbyq61ynDG4YP8qMvABZEdbdVmFE67kA3xXjBEO+635V0zFV7g+j2a2rexvi4k9e6Rr6RBBSLNbdEnhSxDk6vaCZcbi9hDeaz39d1C8HbiWF8ttcUBx7kViMuCAyBhkYyauN8zXHfi+MO6lhTDX/dV0D15rbP8ic9qypZ61hpAOm/iYf0yqBqzpL5JPcSdOCOVvzBV+M93K6FMsDVjRmjmWPJSGlwY/kWrILpICiAvvN3LGv+Q6SQU2FeLhUmHuo1y2RqMFAPTMvTGmu0h45cJZedM43WvEg//GHe/hY6rJiZ3QGVkW8DvzK5NWJFvQDzIlvykJKQJu26O1JifHt6YBRK8uyA4GiMtx9U/xY+LVuZfwwl0jcAhWfm3GTtPrl6XfOSGn6eWOc8HtUU352/ionhubWkaMowGvMfOLYL8/dE4QdkKV1ePABzGf6/G/DUSo9HLaF+WvhrvJtlq5quEzTBA4K3UzTkt0xvGBH3DTr/YB3UPVk7L+GR3j+ZUQ2yYHtnD49tnZW1UFhcfPR3JogrpBfnfbesOwqsrnCWCGExc0GleT6c73GCOHp6yqIkK1ixvUgrlz0cQ1y+MSj1xAIZwv9MBqpWrIXJTEiV4Do0lhOz0oRlUPcQC3HMat4/irYtOWne/T8GW7sukn2kpTg6Y3RFN5EVNNIUJZwy5cy/ex7nRIA60y36Eutgvfn+WpZo6FMEWw+iBrifg6aPHC0IGqtr2N+3lnvu0kqK14pRPbjzwEiJY8jFKmBxZDUpYki5nIi662hZ/f1q4KkJxHZ3GDTTotNfcs7hhXAMflwxgB",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_016UHTUUMyKnMkjHHJB6JnYZ",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "plan": {
+              "schema_version": "0.1",
+              "assignment": "button_toggle_llm_v2",
+              "description": "Verify debounced button-toggle LED behavior and Serial1 ON/OFF reporting on the Nano 33 BLE Sense.",
+              "setup": {
+                "reset": true,
+                "boot_wait_ms": 1000
+              },
+              "assumptions": [
+                "Handout says the LED must react 'quickly' with no numeric limit; we assume a 50 ms button-to-LED reaction threshold.",
+                "Button press is simulated by driving D2 low for 50 ms then releasing (high); 50 ms hold is assumed long enough for any reasonable debounce filter to recognize a stable press.",
+                "Contact bounce is simulated with 6 transitions at 2 ms intervals (~10-12 ms of bounce), a typical mechanical switch bounce duration.",
+                "100 ms settle waits after each press/release are assumed sufficient for debounce logic and LED state to stabilize.",
+                "Stated limits ('quickly', 'exactly once') are graded with le/eq and no extra tolerance margin, per the default rule for stated limits."
+              ],
+              "not_graded": [
+                {
+                  "requirement": "Implement debouncing in software without blocking delay() calls.",
+                  "reason": "Implementation technique (blocking vs non-blocking code) cannot be verified by electrical measurement alone."
+                },
+                {
+                  "requirement": "Comment your code.",
+                  "reason": "Code style/comments are not observable electrically."
+                }
+              ],
+              "steps": [
+                {
+                  "op": "measure",
+                  "id": "led_off_at_reset",
+                  "requirement": "The LED is off after reset, before any button press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 200,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 0
+                    },
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press1_reaction",
+                  "requirement": "The LED turns on quickly after the first button press.",
+                  "primitive": "edge_delay",
+                  "from_pin": "D2",
+                  "from_edge": "falling",
+                  "to_pin": "D13",
+                  "to_edge": "rising",
+                  "timeout_ms": 100,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "le",
+                      "field": "delay_ms",
+                      "value": 50
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press1_uart",
+                  "requirement": "On the first press (turning the LED on), 'ON' is printed on Serial1.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "contains",
+                      "field": "text",
+                      "value": "ON"
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "low",
+                  "id": "press1"
+                },
+                {
+                  "op": "wait",
+                  "ms": 50
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "high",
+                  "id": "release1"
+                },
+                {
+                  "op": "wait",
+                  "ms": 100
+                },
+                {
+                  "op": "measure",
+                  "id": "led_on_after_press1",
+                  "requirement": "The LED is on after the first press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 50,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press2_reaction",
+                  "requirement": "The LED turns off quickly after the second button press.",
+                  "primitive": "edge_delay",
+                  "from_pin": "D2",
+                  "from_edge": "falling",
+                  "to_pin": "D13",
+                  "to_edge": "falling",
+                  "timeout_ms": 100,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "le",
+                      "field": "delay_ms",
+                      "value": 50
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press2_uart",
+                  "requirement": "On the second press (turning the LED off), 'OFF' is printed on Serial1.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "contains",
+                      "field": "text",
+                      "value": "OFF"
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "low",
+                  "id": "press2"
+                },
+                {
+                  "op": "wait",
+                  "ms": 50
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "high",
+                  "id": "release2"
+                },
+                {
+                  "op": "wait",
+                  "ms": 100
+                },
+                {
+                  "op": "measure",
+                  "id": "led_off_after_press2",
+                  "requirement": "The LED is off after the second press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 50,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "bounce_toggle_once",
+                  "requirement": "A single bouncing button press toggles the LED exactly once.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "bounce",
+                  "count": 6,
+                  "interval_us": 2000,
+                  "final_level": "low",
+                  "id": "bouncing_press"
+                },
+                {
+                  "op": "wait",
+                  "ms": 100
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "high",
+                  "id": "release3"
+                },
+                {
+                  "op": "wait",
+                  "ms": 100
+                },
+                {
+                  "op": "measure",
+                  "id": "led_on_after_bounce",
+                  "requirement": "After the bouncing press, the LED ends up on (toggled once from off).",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 50,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "name": "submit_plan",
+          "type": "tool_use"
+        }
+      ],
+      "diagnostics": null,
+      "model": "claude-sonnet-5",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "inference_geo": "global",
+        "input_tokens": 11664,
+        "output_tokens": 7218,
+        "output_tokens_details": {
+          "thinking_tokens": 4997
+        },
+        "service_tier": "standard",
+        "speed": "standard"
+      }
+    }
+  ]
+}
