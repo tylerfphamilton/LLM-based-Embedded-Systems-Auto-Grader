@@ -1,0 +1,42 @@
+Sketch uses 87080 bytes (8%) of program storage space. Maximum is 983040 bytes.
+Global variables use 44664 bytes (17%) of dynamic memory, leaving 217480 bytes for local variables. Maximum is 262144 bytes.
+Device       : nRF52840-QIAA
+Version      : Arduino Bootloader (SAM-BA extended) 2.0 [Arduino:IKXYZ]
+Address      : 0x0
+Pages        : 256
+Page Size    : 4096 bytes
+Total Size   : 1024KB
+Planes       : 1
+Lock Regions : 0
+Locked       : none
+Security     : false
+Erase flash
+
+Done in 0.000 seconds
+Write 87088 bytes to flash (22 pages)
+
+[                              ] 0% (0/22 pages)
+[=                             ] 4% (1/22 pages)
+[==                            ] 9% (2/22 pages)
+[====                          ] 13% (3/22 pages)
+[=====                         ] 18% (4/22 pages)
+[======                        ] 22% (5/22 pages)
+[========                      ] 27% (6/22 pages)
+[=========                     ] 31% (7/22 pages)
+[==========                    ] 36% (8/22 pages)
+[============                  ] 40% (9/22 pages)
+[=============                 ] 45% (10/22 pages)
+[===============               ] 50% (11/22 pages)
+[================              ] 54% (12/22 pages)
+[=================             ] 59% (13/22 pages)
+[===================           ] 63% (14/22 pages)
+[====================          ] 68% (15/22 pages)
+[=====================         ] 72% (16/22 pages)
+[=======================       ] 77% (17/22 pages)
+[========================      ] 81% (18/22 pages)
+[=========================     ] 86% (19/22 pages)
+[===========================   ] 90% (20/22 pages)
+[============================  ] 95% (21/22 pages)
+[==============================] 100% (22/22 pages)
+Done in 3.636 seconds
+New upload port: COM7 (serial)

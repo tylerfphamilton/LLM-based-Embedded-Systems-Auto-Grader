@@ -1,0 +1,149 @@
+{
+  "report_version": "0.1",
+  "assignment": "pwm_1khz_llm_v2",
+  "plan_description": "Verify that the student's Nano 33 BLE Sense generates a free-running 1 kHz, 25% duty cycle square wave on D5 immediately after reset, without any stimulus.",
+  "plan_schema_version": "0.1",
+  "submission": "broken",
+  "started_at": "2026-11-10T07:03:08.479856+00:00",
+  "finished_at": "2026-11-10T07:03:25.501740+00:00",
+  "rig": {
+    "transport": "serial:COM5",
+    "flasher": "arduino-cli",
+    "profile": "nucleo-l476rg-draft"
+  },
+  "flash": {
+    "ok": false,
+    "stage": "compile",
+    "student_fault": true,
+    "log": "\n\u001b[92mUsed platform\u001b[0m     \u001b[92mVersion\u001b[0m \u001b[90mPath\u001b[0m\n\u001b[93marduino:mbed_nano\u001b[0m 4.6.0   \u001b[90mC:\\Users\\seanh\\AppData\\Local\\Arduino15\\packages\\arduino\\hardware\\mbed_nano\\4.6.0\u001b[0m\nC:\\Users\\seanh\\embedded_autograder\\LLM-based-Embedded-Systems-Auto-Grader\\benchmark\\pwm_1khz\\broken\\broken.ino:13:1: error: expected ',' or ';' before 'void'\n void setup() {\n ^~~~\nError during build: exit status 1\n"
+  },
+  "assumptions": [
+    "No tolerance was given for frequency, so a default of tol_pct: 2 is used.",
+    "No tolerance was given for duty cycle, so a default of tol_abs: 1 percentage point is used.",
+    "A 500 ms measurement window is used, giving ~500 periods of the 1 kHz signal for a stable frequency/duty measurement.",
+    "Requirement 2 (signal starts on its own after reset) is verified implicitly by measuring the waveform right after the mandatory 1000 ms boot wait, with no stimulus step preceding it."
+  ],
+  "rig_faults": [],
+  "rig_warnings": [],
+  "plan_warnings": [],
+  "checks": [
+    {
+      "id": "pwm_freq_duty.frequency_hz",
+      "step_id": "pwm_freq_duty",
+      "requirement": "The signal on D5 has a frequency of 1 kHz and a duty cycle of 25%, starting on its own right after reset.",
+      "primitive": "freq_duty",
+      "field": "frequency_hz",
+      "op": "approx",
+      "expected": 1000.0,
+      "expected_text": "≈ 1000 Hz ± 2%",
+      "tolerance": {
+        "tol_pct": 2.0
+      },
+      "measured": null,
+      "verdict": "FAIL",
+      "reason": "the sketch did not compile",
+      "feedback": "The sketch fails to compile because line 11 is missing a terminating semicolon after the PwmOut object declaration: `mbed::PwmOut pwm(digitalPinToPinName(D5))`. This causes a syntax error that prevents the rest of the file from compiling, so no frequency could be measured. Add a `;` at the end of line 11.",
+      "code_location": "broken.ino:11"
+    },
+    {
+      "id": "pwm_freq_duty.duty_pct",
+      "step_id": "pwm_freq_duty",
+      "requirement": "The signal on D5 has a frequency of 1 kHz and a duty cycle of 25%, starting on its own right after reset.",
+      "primitive": "freq_duty",
+      "field": "duty_pct",
+      "op": "approx",
+      "expected": 25.0,
+      "expected_text": "≈ 25% ± 1 pt",
+      "tolerance": {
+        "tol_abs": 1.0
+      },
+      "measured": null,
+      "verdict": "FAIL",
+      "reason": "the sketch did not compile",
+      "feedback": "Same root cause as the frequency check: the missing semicolon on line 11 after `mbed::PwmOut pwm(digitalPinToPinName(D5))` breaks compilation, so no duty cycle could be measured. Fix the declaration by terminating it with a semicolon.",
+      "code_location": "broken.ino:11"
+    },
+    {
+      "id": "pwm_freq_duty.edge_count",
+      "step_id": "pwm_freq_duty",
+      "requirement": "The signal on D5 has a frequency of 1 kHz and a duty cycle of 25%, starting on its own right after reset.",
+      "primitive": "freq_duty",
+      "field": "edge_count",
+      "op": "ge",
+      "expected": 2,
+      "expected_text": "≥ 2",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "FAIL",
+      "reason": "the sketch did not compile",
+      "feedback": "No edges were detected because the sketch never ran on the board; it did not compile due to the missing semicolon at the end of line 11 (`mbed::PwmOut pwm(digitalPinToPinName(D5))`). Correct this syntax error and the signal edges should become measurable.",
+      "code_location": "broken.ino:11"
+    },
+    {
+      "id": "not_graded.1",
+      "step_id": null,
+      "requirement": "Must use a hardware timer/PWM peripheral (not analogWrite() or delay()-based bit-banging).",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "Not electrically observable: a correctly timed 1 kHz/25% waveform can be produced by either a hardware timer or careful software timing; this can only be checked by TA code review.",
+      "feedback": null,
+      "code_location": null
+    },
+    {
+      "id": "not_graded.2",
+      "step_id": null,
+      "requirement": "Register values/constants are commented and their computation explained.",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "Code documentation/comments cannot be verified electrically; requires manual review of the submitted source.",
+      "feedback": null,
+      "code_location": null
+    }
+  ],
+  "command_log": [
+    {
+      "t_ms": 0.04,
+      "dir": "tx",
+      "line": "PING"
+    },
+    {
+      "t_ms": 5.313,
+      "dir": "rx",
+      "line": "OK fw=\"0.1\" protocol=\"0.2\" pinmap=\"6e27016f\""
+    },
+    {
+      "t_ms": 5.386,
+      "dir": "note",
+      "line": "handshake: {'fw': '0.1', 'protocol': '0.2', 'pinmap': '6e27016f'}"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "PASS": 0,
+    "FAIL": 3,
+    "BORDERLINE": 0,
+    "ERROR": 0,
+    "NOT_GRADED": 2
+  },
+  "llm": {
+    "model": "claude-sonnet-5",
+    "prompt_version": "36dae648",
+    "input_tokens": 1987,
+    "output_tokens": 624,
+    "latency_s": 5.676,
+    "warnings": [],
+    "error": null
+  }
+}

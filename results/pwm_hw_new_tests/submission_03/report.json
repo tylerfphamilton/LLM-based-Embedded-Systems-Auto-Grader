@@ -1,0 +1,179 @@
+{
+  "report_version": "0.1",
+  "assignment": "pwm_1khz_llm_v2",
+  "plan_description": "Verify that the student's Nano 33 BLE Sense generates a free-running 1 kHz, 25% duty cycle square wave on D5 immediately after reset, without any stimulus.",
+  "plan_schema_version": "0.1",
+  "submission": "submission_03",
+  "started_at": "2026-11-10T07:04:49.290065+00:00",
+  "finished_at": "2026-11-10T07:05:29.030168+00:00",
+  "rig": {
+    "transport": "serial:COM5",
+    "flasher": "arduino-cli",
+    "profile": "nucleo-l476rg-draft"
+  },
+  "flash": {
+    "ok": true,
+    "stage": "done",
+    "student_fault": false,
+    "log": "Sketch uses 85392 bytes (8%) of program storage space. Maximum is 983040 bytes.\nGlobal variables use 44552 bytes (16%) of dynamic memory, leaving 217592 bytes for local variables. Maximum is 262144 bytes.\nDevice       : nRF52840-QIAA\nVersion      : Arduino Bootloader (SAM-BA extended) 2.0 [Arduino:IKXYZ]\nAddress      : 0x0\nPages        : 256\nPage Size    : 4096 bytes\nTotal Size   : 1024KB\nPlanes       : 1\nLock Regions : 0\nLocked       : none\nSecurity     : false\nErase flash\n\nDone in 0.000 seconds\nWrite 85400 bytes to flash (21 pages)\n\n[                              ] 0% (0/21 pages)\n[=                             ] 4% (1/21 pages)\n[==                            ] 9% (2/21 pages)\n[====                          ] 14% (3/21 pages)\n[=====                         ] 19% (4/21 pages)\n[=======                       ] 23% (5/21 pages)\n[========                      ] 28% (6/21 pages)\n[==========                    ] 33% (7/21 pages)\n[===========                   ] 38% (8/21 pages)\n[============                  ] 42% (9/21 pages)\n[==============                ] 47% (10/21 pages)\n[===============               ] 52% (11/21 pages)\n[=================             ] 57% (12/21 pages)\n[==================            ] 61% (13/21 pages)\n[====================          ] 66% (14/21 pages)\n[=====================         ] 71% (15/21 pages)\n[======================        ] 76% (16/21 pages)\n[========================      ] 80% (17/21 pages)\n[=========================     ] 85% (18/21 pages)\n[===========================   ] 90% (19/21 pages)\n[============================  ] 95% (20/21 pages)\n[==============================] 100% (21/21 pages)\nDone in 3.459 seconds\nNew upload port: COM7 (serial)\n"
+  },
+  "assumptions": [
+    "No tolerance was given for frequency, so a default of tol_pct: 2 is used.",
+    "No tolerance was given for duty cycle, so a default of tol_abs: 1 percentage point is used.",
+    "A 500 ms measurement window is used, giving ~500 periods of the 1 kHz signal for a stable frequency/duty measurement.",
+    "Requirement 2 (signal starts on its own after reset) is verified implicitly by measuring the waveform right after the mandatory 1000 ms boot wait, with no stimulus step preceding it."
+  ],
+  "rig_faults": [],
+  "rig_warnings": [],
+  "plan_warnings": [],
+  "checks": [
+    {
+      "id": "pwm_freq_duty.frequency_hz",
+      "step_id": "pwm_freq_duty",
+      "requirement": "The signal on D5 has a frequency of 1 kHz and a duty cycle of 25%, starting on its own right after reset.",
+      "primitive": "freq_duty",
+      "field": "frequency_hz",
+      "op": "approx",
+      "expected": 1000.0,
+      "expected_text": "≈ 1000 Hz ± 2%",
+      "tolerance": {
+        "tol_pct": 2.0
+      },
+      "measured": 252.749,
+      "verdict": "FAIL",
+      "reason": "measured 252.75 Hz, but expected ≈ 1000 Hz ± 2%",
+      "feedback": "Measured frequency is about 1/4 of the target (252.75 Hz vs 1000 Hz), and 1000/252.749 ≈ 3.96 ≈ 4, so COUNTERTOP is effectively 4x too large. This points to the CORE_CLK_HZ constant on line 15: the nRF52840's PWM peripheral is clocked from the 16 MHz HFCLK, not the 64 MHz CPU clock, so PWM_TOP_VAL (line 19) comes out 4x too big (4000 instead of 1000) for PRESCALER DIV_16. Check the actual PWM clock source in the datasheet and recompute PWM_TOP_VAL using 16 MHz as the base clock.",
+      "code_location": "submission_03.ino:15"
+    },
+    {
+      "id": "pwm_freq_duty.duty_pct",
+      "step_id": "pwm_freq_duty",
+      "requirement": "The signal on D5 has a frequency of 1 kHz and a duty cycle of 25%, starting on its own right after reset.",
+      "primitive": "freq_duty",
+      "field": "duty_pct",
+      "op": "approx",
+      "expected": 25.0,
+      "expected_text": "≈ 25% ± 1 pt",
+      "tolerance": {
+        "tol_abs": 1.0
+      },
+      "measured": 25.0,
+      "verdict": "PASS",
+      "reason": "measured 25%; expected ≈ 25% ± 1 pt",
+      "feedback": null,
+      "code_location": null
+    },
+    {
+      "id": "pwm_freq_duty.edge_count",
+      "step_id": "pwm_freq_duty",
+      "requirement": "The signal on D5 has a frequency of 1 kHz and a duty cycle of 25%, starting on its own right after reset.",
+      "primitive": "freq_duty",
+      "field": "edge_count",
+      "op": "ge",
+      "expected": 2,
+      "expected_text": "≥ 2",
+      "tolerance": null,
+      "measured": 126,
+      "verdict": "PASS",
+      "reason": "measured 126; expected ≥ 2",
+      "feedback": null,
+      "code_location": null
+    },
+    {
+      "id": "not_graded.1",
+      "step_id": null,
+      "requirement": "Must use a hardware timer/PWM peripheral (not analogWrite() or delay()-based bit-banging).",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "Not electrically observable: a correctly timed 1 kHz/25% waveform can be produced by either a hardware timer or careful software timing; this can only be checked by TA code review.",
+      "feedback": null,
+      "code_location": null
+    },
+    {
+      "id": "not_graded.2",
+      "step_id": null,
+      "requirement": "Register values/constants are commented and their computation explained.",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "Code documentation/comments cannot be verified electrically; requires manual review of the submitted source.",
+      "feedback": null,
+      "code_location": null
+    }
+  ],
+  "command_log": [
+    {
+      "t_ms": 0.038,
+      "dir": "tx",
+      "line": "PING"
+    },
+    {
+      "t_ms": 5.62,
+      "dir": "rx",
+      "line": "OK fw=\"0.1\" protocol=\"0.2\" pinmap=\"6e27016f\""
+    },
+    {
+      "t_ms": 5.675,
+      "dir": "note",
+      "line": "handshake: {'fw': '0.1', 'protocol': '0.2', 'pinmap': '6e27016f'}"
+    },
+    {
+      "t_ms": 19612.376,
+      "dir": "tx",
+      "line": "RESET"
+    },
+    {
+      "t_ms": 19624.328,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 19624.396,
+      "dir": "tx",
+      "line": "WAIT 1000"
+    },
+    {
+      "t_ms": 20626.325,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 20626.391,
+      "dir": "tx",
+      "line": "FREQ D5 500"
+    },
+    {
+      "t_ms": 21133.22,
+      "dir": "rx",
+      "line": "OK frequency_hz=252.749 duty_pct=25.0 edge_count=126"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "PASS": 2,
+    "FAIL": 1,
+    "BORDERLINE": 0,
+    "ERROR": 0,
+    "NOT_GRADED": 2
+  },
+  "llm": {
+    "model": "claude-sonnet-5",
+    "prompt_version": "36dae648",
+    "input_tokens": 2627,
+    "output_tokens": 1720,
+    "latency_s": 18.608,
+    "warnings": [],
+    "error": null
+  }
+}
