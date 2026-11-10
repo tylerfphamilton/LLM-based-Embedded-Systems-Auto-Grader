@@ -6,3 +6,13 @@ wrong_duty:        { faulty: true, fault: wrong_duty }
 wrong_pin:         { faulty: true, fault: wrong_pin }
 wrong_prescaler:   { faulty: true, fault: wrong_prescaler }
 broken:            { faulty: true, fault: compiler_error}
+submission_01:     { faulty: true}
+submission_02:     { faulty: false}
+submission_03:     { faulty: true}
+submission_04:     { faulty: true}
+submission_05:     { faulty: true}
+submission_06:     { faulty: true}
+submission_07:     { faulty: true}
+submission_08:     { faulty: true}
+submission_09:     { faulty: true}
+submission_10:     { faulty: false}
