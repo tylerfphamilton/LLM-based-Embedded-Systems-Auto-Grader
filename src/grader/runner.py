@@ -329,6 +329,8 @@ def run(
     for c in failed:
         c.feedback = fb.texts.get(c.id)
         c.code_location = fb.code_locations.get(c.id)
+        c.cause_found = fb.cause_found.get(c.id)
+        c.same_cause_as = fb.same_cause_as.get(c.id)
     for n, ng in enumerate(plan.not_graded, start=1):
         checks.append(
             CheckResult(

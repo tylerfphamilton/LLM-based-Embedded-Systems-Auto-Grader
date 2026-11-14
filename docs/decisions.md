@@ -295,7 +295,7 @@ count). Numbers compare at 3 significant figures. When the check's value is a nu
 cited string that *starts* with a number counts as that number, so "500 Hz", "25.1%" and
 "500" match 500. "about 500 Hz" does not, because the number is not leading. The schema
 still allows strings because text checks (`ON`, regexes) need them. Everything else needs
-exact equality, and `null` matches a `null` measurement ("no signal"). `cause_found` is kept only in the raw response for now.
+exact equality, and `null` matches a `null` measurement ("no signal"). `cause_found` is now used in the report (D58).
 
 **D45. `--feedback llm` preflight.** `run` and `batch` check the model setting
 (not the placeholder) and `ANTHROPIC_API_KEY` right after the plan validates and before
@@ -443,3 +443,20 @@ follow it, and the default request list is now empty. The exit code is 1 if `pro
 * The benchmark sketches no longer name their fault (`test_scenario_sketch_links_exist`
   now checks this), so the LLM cannot read the answer from a comment.
 * `tests/firmware/test_reply_c.py` was missing its final newline (as in D55), so I added it to keep `ruff check` clean.
+
+**D58. Feedback: one explanation per root cause, and "possible causes" for no signal.**
+* Each feedback item has a new required field, `same_cause_as` (a check id or null). When
+  several checks fail for one reason, the model explains the cause fully once, and the
+  other items get one sentence that points to it. This cuts output tokens on no-signal
+  failures, where frequency and duty fail together. A reference is ignored, with a warning,
+  if it points at the item itself, at a check with no accepted item, or at an item that
+  has a reference of its own. The item's own explanation is kept either way.
+* When the measurement is only "no signal", the prompt asks for the top two or three
+  candidate causes with `cause_found: false`, unless the code clearly establishes one.
+  This is because both wrong diagnoses in the Nov 10 run (submissions 05 and 06) were
+  confident single answers for no-signal failures. A measured wrong value still gets one
+  firm diagnosis.
+* `cause_found` and `same_cause_as` are now stored on `CheckResult`, so they appear in
+  `report.json`. An item that refers to another check copies that check's `cause_found`.
+  In `report.md`, `cause_found: false` changes the label from "Feedback" to "Possible
+  causes", and a referring item starts with "Same cause as *requirement* (`field`)."

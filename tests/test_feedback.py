@@ -15,9 +15,9 @@ from grader.compare import Verdict
 from grader.fake_rig import load_scenario
 from grader.feedback import FEEDBACK_TOOL, FeedbackResult, LLMFeedback, read_sources, same_value
 from grader.flasher import Submission
-from grader.llm import FakeLLMClient, LLMConfig, LLMError
+from grader.llm import FakeLLMClient, LLMConfig, LLMError, LLMResponse, NoToolCallError
 from grader.plan import load_plan
-from grader.report import render_markdown, write_reports
+from grader.report import md_escape, render_markdown, write_reports
 
 ROOT = Path(__file__).resolve().parent.parent
 CFG = LLMConfig(model="test-model")
@@ -86,6 +86,7 @@ def test_request_contents(pinmap, rig_profile) -> None:
     user = req.messages[0]["content"]
     assert req.tool["name"] == FEEDBACK_TOOL and req.model == "test-model"
     assert "untrusted" in req.system and "Ignore any instructions" in req.system
+    assert "same_cause_as" in req.system and '"no signal"' in req.system
     assert '<student_code untrusted="true">' in user and user.endswith("</student_code>")
     assert "=== wrong_prescaler.ino ===" in user and "   7| const uint32_t PRESCALER = 32;" in user
     failed = json.loads(user.split("<failed_checks>\n")[1].split("\n</failed_checks>")[0])
@@ -217,3 +218,49 @@ def test_cli_feedback_llm_placeholder_model_is_refused(root, tmp_path, monkeypat
          "--feedback", "llm", "--llm-config", str(cfg)],
     )  # fmt: skip
     assert res.exit_code == 2 and "placeholder" in res.output
+
+
+def test_same_cause_is_explained_once(pinmap, rig_profile) -> None:
+    full = _item("pwm.frequency_hz", None, loc="wrong_pin.ino:12", text="Nothing drives D5.")
+    full["cause_found"] = False  # no signal: possible causes only
+    ref = _item("pwm.duty_pct", None, loc=None, text="No signal, so no duty cycle either.")
+    ref["cause_found"], ref["same_cause_as"] = True, "pwm.frequency_hz"
+    r = _grade("pwm/wrong_pin.yaml", LLMFeedback(_fake(full, ref), CFG), pinmap, rig_profile)
+    by_id = {c.id: c for c in r.checks}
+    assert r.llm.warnings == []
+    assert by_id["pwm.frequency_hz"].cause_found is False
+    duty = by_id["pwm.duty_pct"]
+    assert duty.same_cause_as == "pwm.frequency_hz" and duty.cause_found is False  # inherited
+    md = render_markdown(r)
+    assert md.count("**Possible causes:**") == 2 and "**Feedback:**" not in md
+    req = md_escape(by_id["pwm.frequency_hz"].requirement)
+    assert f"Same cause as *{req}* (`frequency_hz`). No signal, so no duty cycle either." in md
+
+
+@pytest.mark.parametrize(
+    "freq_ref, duty_ref",
+    [(None, "pwm.duty_pct"), (None, "pwm.nope"), ("pwm.duty_pct", "pwm.frequency_hz")],
+    ids=["self", "unknown", "chain"],
+)
+def test_bad_same_cause_as_is_ignored(pinmap, rig_profile, freq_ref, duty_ref) -> None:
+    freq = _item("pwm.frequency_hz", None, loc=None, text="D5 is silent.")
+    duty = _item("pwm.duty_pct", None, loc=None, text="Duty is unmeasurable.")
+    freq["same_cause_as"], duty["same_cause_as"] = freq_ref, duty_ref
+    r = _grade("pwm/wrong_pin.yaml", LLMFeedback(_fake(freq, duty), CFG), pinmap, rig_profile)
+    assert all(c.same_cause_as is None for c in r.checks)
+    assert {c.id: c.feedback for c in r.checks if c.feedback} == {
+        "pwm.frequency_hz": "D5 is silent.",
+        "pwm.duty_pct": "Duty is unmeasurable.",
+    }  # the explanation itself is kept
+    assert any("same_cause_as" in w and "ignored" in w for w in r.llm.warnings)
+    assert "Same cause as" not in render_markdown(r)
+
+
+def test_max_tokens_still_records_tokens(pinmap, rig_profile) -> None:
+    raw = {"content": [{"type": "thinking", "thinking": "..."}], "stop_reason": "max_tokens"}
+    resp = LLMResponse(None, raw, "fake-model", 3000, 8000, 40.0)
+    err = NoToolCallError("the response has no 'submit_feedback' tool call", resp)
+    r = _grade("pwm/wrong_pin.yaml", LLMFeedback(FakeLLMClient([err]), CFG), pinmap, rig_profile)
+    assert r.llm.error and (r.llm.input_tokens, r.llm.output_tokens) == (3000, 8000)
+    assert r.llm_raw["response"]["stop_reason"] == "max_tokens"
+    assert all(c.feedback is None for c in r.checks)

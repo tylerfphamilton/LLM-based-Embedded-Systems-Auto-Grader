@@ -14,7 +14,7 @@ from typing import Any, Protocol
 
 from grader.compare import Verdict
 from grader.flasher import Submission
-from grader.llm import LLMClient, LLMConfig, LLMError, LLMRequest, load_prompt
+from grader.llm import LLMClient, LLMConfig, LLMError, LLMRequest, NoToolCallError, load_prompt
 from grader.plan import Plan, is_measure
 from grader.protocol import command_for_step
 from grader.report import CheckResult, LLMInfo, LogEntry
@@ -32,6 +32,8 @@ class FeedbackResult:
     code_locations: dict[str, str] = field(default_factory=dict)
     llm: LLMInfo | None = None
     raw: dict | None = None  # request + raw response, saved as llm_feedback.json
+    cause_found: dict[str, bool] = field(default_factory=dict)  # False = possible causes only
+    same_cause_as: dict[str, str] = field(default_factory=dict)  # check id -> explained check id
 
 
 class FeedbackGenerator(Protocol):
@@ -55,7 +57,7 @@ class NullFeedback:
 
 FEEDBACK_TOOL_DEF = {
     "name": FEEDBACK_TOOL,
-    "description": "Submit one explanation per failed check.",
+    "description": "Submit one item per failed check; explain each root cause once.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -69,9 +71,11 @@ FEEDBACK_TOOL_DEF = {
                         "cited_value": {"type": ["number", "string", "null"]},
                         "code_location": {"type": ["string", "null"]},
                         "cause_found": {"type": "boolean"},
+                        "same_cause_as": {"type": ["string", "null"]},
                     },
                     "required": [
-                        "check_id", "explanation", "cited_value", "code_location", "cause_found"
+                        "check_id", "explanation", "cited_value", "code_location", "cause_found",
+                        "same_cause_as",
                     ],
                     "additionalProperties": False,
                 },
@@ -147,15 +151,16 @@ def same_value(cited: Any, actual: Any) -> bool:
     return cited == actual
 
 
-def accept_items(tool_input: Any, failed: list[CheckResult]) -> tuple[dict, dict, list[str]]:
-    """Plain-code checks on the LLM's items. Returns (texts, code_locations, warnings)."""
+def accept_items(tool_input: Any, failed: list[CheckResult]) -> tuple[FeedbackResult, list[str]]:
+    """Plain-code checks on the LLM's items. Returns (accepted feedback, warnings)."""
     by_id = {c.id: c for c in failed}
-    texts: dict[str, str] = {}
-    locs: dict[str, str] = {}
+    fb = FeedbackResult()
+    texts, locs = fb.texts, fb.code_locations
+    refs: dict[str, str] = {}
     warnings: list[str] = []
     items = tool_input.get("items") if isinstance(tool_input, dict) else None
     if not isinstance(items, list):
-        return texts, locs, ["the feedback tool input has no 'items' list"]
+        return fb, ["the feedback tool input has no 'items' list"]
     for n, item in enumerate(items, start=1):
         cid = item.get("check_id") if isinstance(item, dict) else None
         text = item.get("explanation") if isinstance(item, dict) else None
@@ -180,10 +185,25 @@ def accept_items(tool_input: Any, failed: list[CheckResult]) -> tuple[dict, dict
         loc = item.get("code_location")
         if isinstance(loc, str) and loc.strip():
             locs[cid] = loc.strip()
+        if isinstance(found := item.get("cause_found"), bool):
+            fb.cause_found[cid] = found
+        if isinstance(ref := item.get("same_cause_as"), str) and ref.strip():
+            refs[cid] = ref.strip()
+    # A reference must point at another accepted item that has its own full explanation.
+    for cid, ref in refs.items():
+        if ref == cid or ref not in texts or ref in refs:
+            warnings.append(
+                f"'{cid}': same_cause_as '{ref}' ignored, it must name another failed check "
+                "with its own explanation"
+            )
+            continue
+        fb.same_cause_as[cid] = ref
+        if ref in fb.cause_found:
+            fb.cause_found[cid] = fb.cause_found[ref]
     missing = [c.id for c in failed if c.id not in texts]
     if missing:
         warnings.append(f"no accepted feedback for: {', '.join(missing)}")
-    return texts, locs, warnings
+    return fb, warnings
 
 
 class LLMFeedback:
@@ -257,10 +277,16 @@ class LLMFeedback:
             resp = self.client.complete(req)
         except LLMError as exc:
             info.error = str(exc)
-            return FeedbackResult(llm=info, raw={**raw, "error": str(exc)})
-        texts, locs, item_warnings = accept_items(resp.tool_input, failed)
+            raw["error"] = str(exc)
+            if isinstance(exc, NoToolCallError):  # e.g. max_tokens: the tokens were still paid
+                r = exc.response
+                info.input_tokens, info.output_tokens = r.input_tokens, r.output_tokens
+                info.latency_s, raw["response"] = r.latency_s, r.raw
+            return FeedbackResult(llm=info, raw=raw)
+        fb, item_warnings = accept_items(resp.tool_input, failed)
         info.model = resp.model
         info.input_tokens, info.output_tokens = resp.input_tokens, resp.output_tokens
         info.latency_s = resp.latency_s
         info.warnings += item_warnings
-        return FeedbackResult(texts, locs, info, {**raw, "response": resp.raw})
+        fb.llm, fb.raw = info, {**raw, "response": resp.raw}
+        return fb

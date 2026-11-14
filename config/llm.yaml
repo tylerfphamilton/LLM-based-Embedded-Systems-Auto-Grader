@@ -7,7 +7,7 @@ model: claude-sonnet-5
 
 max_tokens:
   plan: 16000       # a plan is a few KB of JSON; leave room for the model to think
-  feedback: 4000
+  feedback: 8000    # includes thinking; one hard no-signal sketch used >4000
 
 # The Messages API rejects `temperature` since API version 2026-10-21 (anthropic SDK >= 2.0),
 # so it must stay null. See docs/decisions.md D36.

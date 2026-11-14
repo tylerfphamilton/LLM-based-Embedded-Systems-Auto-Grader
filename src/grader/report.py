@@ -28,6 +28,8 @@ class CheckResult(BaseModel):
     reason: str
     feedback: str | None = None
     code_location: str | None = None  # from LLM feedback, e.g. "sketch.ino:14"
+    cause_found: bool | None = None  # False: the feedback lists possible causes only
+    same_cause_as: str | None = None  # id of the FAIL check whose feedback explains this one
 
 
 class LLMInfo(BaseModel):
@@ -172,12 +174,17 @@ def render_markdown(r: Report) -> str:
     failed = [c for c in graded if c.verdict == Verdict.FAIL]
     if failed:
         out += ["## What to fix", ""]
+        by_id = {c.id: c for c in failed}
         for c in failed:
+            label = "Possible causes" if c.cause_found is False else "Feedback"
+            text = md_escape(c.feedback) if c.feedback else FEEDBACK_PLACEHOLDER
+            if c.feedback and (ref := by_id.get(c.same_cause_as or "")):
+                text = f"Same cause as *{md_escape(ref.requirement)}* (`{ref.field}`). {text}"
             out += [
                 f"### ❌ {md_escape(c.requirement)} (`{c.field}`)",
                 "",
                 f"- **Why:** {md_escape(c.reason)}",
-                f"- **Feedback:** {md_escape(c.feedback) if c.feedback else FEEDBACK_PLACEHOLDER}",
+                f"- **{label}:** {text}",
             ]
             if c.code_location:
                 out.append(f"- **Where to look:** {md_escape(c.code_location)}")
