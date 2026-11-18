@@ -73,13 +73,28 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   is `frequency_hz=null duty_pct=null` with the actual `edge_count`. **No signal is a
   valid measurement, not an error.** Edges arriving faster than the board can time them
   give `ERR INTERNAL capture overrun …` (a rig fault).
-* `DELAY`: `delay_ms` is measured from the first matching edge on from_pin. If from_pin
-  is the pin the board is driving, this is the moment the board drove it.
-  `to_edge_count` counts *every* edge of the requested kind on to_pin from that trigger
-  until `timeout_ms` after it, so the reply always takes the full timeout. If to_pin never
-  changes, the reply is `delay_ms=null to_edge_count=0`. This is a valid measurement; the
-  board must **not** reply `ERR TIMEOUT` here. If from_pin never changes, the reply is
-  `ERR TIMEOUT …`, because the rig failed to trigger.
+* `DELAY`: from_pin needs the `gpio` capability, to_pin `timer_capture` (as `validate.py`
+  requires). The **trigger** is the first `from_edge` on from_pin within
+  max(`timeout_ms`, 1000 ms) of the request (so a short timeout still catches a slow
+  periodic trigger); if it never comes the reply is `ERR TIMEOUT no <edge> edge on <pin>
+  within <n> ms`, because the rig failed to trigger. If from_pin is the pin the board is
+  driving (`drive` capability), the trigger is the moment the board drove it: the pin is
+  left exactly as `DRIVE` set it, and the STM32's edge interrupt sees its own output
+  change. Since `DELAY` blocks, that case needs `ARM DELAY …` followed by the `DRIVE`.
+  `delay_ms` runs from the trigger to the first `to_edge` on to_pin after it (µs
+  resolution, 3 decimals). `to_edge_count` counts *every* `to_edge` on to_pin from the
+  trigger until `timeout_ms` after it, so the reply always takes the full timeout after
+  the trigger (at most 1000 ms + 2 × `timeout_ms` in all, inside the host's reply
+  timeout). If to_pin never changes, the reply is `delay_ms=null to_edge_count=0`. This
+  is a valid measurement; the board must **not** reply `ERR TIMEOUT` here.
+  * Both edges are timestamped in an interrupt from the TIM5 timebase. The interrupt
+    latency (a few µs) is the same for both, so it cancels; a response less than that
+    after the trigger can be mis-timed. to_pin is an input with the internal pull-down.
+  * from_pin and to_pin may be the same pin (e.g. `DELAY D13 RISING D13 FALLING 1000`
+    measures the high time). The trigger edge itself is never counted as a response.
+  * The STM32 has one edge interrupt per pin *number*, so two pins with the same number
+    on different ports (PA3, PB3) can't be used together: `ERR BADARG pins … share edge
+    interrupt line …`.
 * `TRACE`: `edge_count` counts every edge, rising and falling. `final_level` is `0` or `1`.
   `edges_ms` is relative to the start of the window, with microsecond resolution (3
   decimals). The firmware stores up to 256 edges and a reply line holds about 90; if the

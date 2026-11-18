@@ -13,11 +13,36 @@
 #include "capture.h"
 #include "cmd.h"
 #include "drive.h"
+#include "delay.h"
 #include "pins_gen.h"
 #include "reply.h"
 #include "rig.h"
 #include "trace.h"
 
+
+/* delay.c is Zephyr + GPIO interrupts; this stand-in records the call ("-" if none was
+   made) and returns a canned result. */
+static struct delay_raw stub_delay;
+static int stub_delay_rc;
+static char stub_delay_call[64];
+
+int delay_measure(const struct delay_pin *from, const struct delay_pin *to, uint32_t timeout_ms,
+                  struct delay_raw *out) {
+    snprintf(stub_delay_call, sizeof(stub_delay_call), "%c %u %u %d > %c %u %u %d / %u",
+             from->port, from->pin, from->edge, from->keep, to->port, to->pin, to->edge, to->keep,
+             (unsigned)timeout_ms);
+    *out = stub_delay;
+    return stub_delay_rc;
+}
+
+/* the first response `delay_ticks` after the trigger, `count` responses in all */
+static void stub_delay_result(uint32_t delay_ticks, uint32_t count) {
+    stub_delay_rc = DELAY_OK;
+    stub_delay.clock_hz = 80000000u;
+    stub_delay.trigger = 4294000000u; /* just before the 32-bit wrap: the delay must not care */
+    stub_delay.first = stub_delay.trigger + delay_ticks;
+    stub_delay.to_count = count;
+}
 
 /* drive.c is Zephyr + GPIO; these stand-ins record the call (or "-" if none was made). */
 static char stub_drive_call[64];
@@ -435,6 +460,107 @@ int main(void) {
     }
     freq("drive_unknown", "DRIVE D99 HIGH");
     freq("drive_noargs", "DRIVE D2");
+
+    /* DELAY: reference pins for the per-pin rows. from = first wired gpio pin, to = first
+       wired timer_capture pin */
+    {
+        const char *from_ref = NULL, *to_ref = NULL;
+        for (size_t i = 0; i < PINS_COUNT; i++) {
+            if (PINS[i].port == 0) {
+                continue;
+            }
+            if (from_ref == NULL && (PINS[i].caps & CAP_GPIO)) {
+                from_ref = PINS[i].name;
+            }
+            if (to_ref == NULL && (PINS[i].caps & CAP_TIMER_CAPTURE)) {
+                to_ref = PINS[i].name;
+            }
+        }
+        if (from_ref != NULL && to_ref != NULL) {
+            current = "delay_refs";
+            printf("delay_refs\t%s %s\n", from_ref, to_ref);
+            stub_delay_result(260000, 1); /* 3.25 ms */
+            for (size_t i = 0; i < PINS_COUNT; i++) {
+                char line[96], tag[80];
+                snprintf(line, sizeof(line), "DELAY %s FALLING %s ANY 100", PINS[i].name, to_ref);
+                snprintf(tag, sizeof(tag), "delayfrom\t%s", PINS[i].name);
+                current = tag;
+                cmd_handle(line, out);
+                snprintf(line, sizeof(line), "DELAY %s FALLING %s ANY 100", from_ref, PINS[i].name);
+                snprintf(tag, sizeof(tag), "delayto\t%s", PINS[i].name);
+                current = tag;
+                cmd_handle(line, out);
+            }
+        }
+    }
+
+    /* DELAY details: from = first wired drive pin (else gpio pin), to = first wired
+       timer_capture pin. Each case prints the reply, then the call ("-" = none) */
+    {
+        const char *from = NULL, *to = NULL, *gpio = NULL;
+        for (size_t i = 0; i < PINS_COUNT; i++) {
+            if (PINS[i].port == 0) {
+                continue;
+            }
+            if (from == NULL && (PINS[i].caps & CAP_DRIVE) && (PINS[i].caps & CAP_GPIO)) {
+                from = PINS[i].name;
+            }
+            if (gpio == NULL && (PINS[i].caps & CAP_GPIO)) {
+                gpio = PINS[i].name;
+            }
+            if (to == NULL && (PINS[i].caps & CAP_TIMER_CAPTURE)) {
+                to = PINS[i].name;
+            }
+        }
+        if (from == NULL) {
+            from = gpio;
+        }
+        if (from != NULL && to != NULL) {
+            static const struct {
+                const char *name, *args; /* args: "<from_edge> <to_edge> <timeout>" */
+                uint32_t ticks, count;
+                int rc;
+                uint32_t clock_hz;
+            } cases[] = {
+                {"delay_basic", "FALLING ANY 100", 260000, 1, DELAY_OK, 80000000u},
+                {"delay_rising", "RISING FALLING 50", 260000, 1, DELAY_OK, 80000000u},
+                {"delay_any", "ANY RISING 20", 260000, 1, DELAY_OK, 80000000u},
+                {"delay_fine", "FALLING ANY 100", 99, 1, DELAY_OK, 80000000u},
+                {"delay_long", "FALLING ANY 10000", 799999920u, 1, DELAY_OK, 80000000u},
+                {"delay_bounce", "FALLING ANY 100", 32000, 5, DELAY_OK, 80000000u},
+                {"delay_null", "FALLING ANY 100", 0, 0, DELAY_OK, 80000000u},
+                {"delay_notrigger", "FALLING ANY 100", 0, 0, DELAY_NO_TRIGGER, 80000000u},
+                {"delay_notrigger_long", "RISING ANY 2000", 0, 0, DELAY_NO_TRIGGER, 80000000u},
+                {"delay_noport", "FALLING ANY 100", 0, 0, DELAY_NO_PORT, 80000000u},
+                {"delay_hw", "FALLING ANY 100", 0, 0, DELAY_HW, 80000000u},
+                {"delay_clock0", "FALLING ANY 100", 260000, 1, DELAY_OK, 0},
+                {"delay_badfrom", "DOWN ANY 100", 0, 0, DELAY_OK, 80000000u},
+                {"delay_badto", "FALLING rising 100", 0, 0, DELAY_OK, 80000000u},
+                {"delay_t0", "FALLING ANY 0", 0, 0, DELAY_OK, 80000000u},
+                {"delay_tbig", "FALLING ANY 10001", 0, 0, DELAY_OK, 80000000u},
+                {"delay_tnan", "FALLING ANY 1e3", 0, 0, DELAY_OK, 80000000u},
+            };
+            current = "delay_pins";
+            printf("delay_pins\t%s %s\n", from, to);
+            for (size_t k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+                char req[96], e1[16], e2[16], tmo[16];
+                sscanf(cases[k].args, "%15s %15s %15s", e1, e2, tmo);
+                snprintf(req, sizeof(req), "DELAY %s %s %s %s %s", from, e1, to, e2, tmo);
+                stub_delay_result(cases[k].ticks, cases[k].count);
+                stub_delay_rc = cases[k].rc;
+                stub_delay.clock_hz = cases[k].clock_hz;
+                strcpy(stub_delay_call, "-");
+                freq(cases[k].name, req);
+                printf("%s_call\t%s\n", cases[k].name, stub_delay_call);
+            }
+            char req[96];
+            snprintf(req, sizeof(req), "DELAY %s FALLING %s ANY", from, to);
+            freq("delay_args", req);
+            snprintf(req, sizeof(req), "DELAY %s FALLING D99 ANY 100", from);
+            freq("delay_unknown_to", req);
+        }
+    }
+    freq("delay_unknown_from", "DELAY D99 FALLING D13 ANY 100");
 
     /* the generated pin table */
     current = "pins";

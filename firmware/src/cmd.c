@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "capture.h"
+#include "delay.h"
 #include "drive.h"
 #include "pins.h"
 #include "reply.h"
@@ -375,6 +376,126 @@ static void cmd_drive(const struct args *a, reply_fn reply){
     reply_send(&r, reply);
 }
 
+// RISING / FALLING / ANY -> DELAY_EDGE_*; 0 if it is none of them
+static uint8_t parse_edge(const char* s){
+
+    if (strcmp(s, "RISING") == 0){
+        return DELAY_EDGE_RISING;
+    }
+    if (strcmp(s, "FALLING") == 0){
+        return DELAY_EDGE_FALLING;
+    }
+    if (strcmp(s, "ANY") == 0){
+        return DELAY_EDGE_ANY;
+    }
+    return 0;
+}
+
+// pin is in the map, has the capability the command needs and is wired; otherwise sends
+// ERR BADPIN and returns false
+static bool pin_usable(const struct pin_def* p, const char* name, bool has_cap,
+                       const char* cap, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    if (p == NULL){
+        snprintf(msg, sizeof(msg), "pin %.16s is not in the pin map", name);
+        reply_err(reply, "BADPIN", msg);
+        return false;
+    }
+    if (!has_cap){
+        snprintf(msg, sizeof(msg), "pin %.16s has no %s capability", name, cap);
+        reply_err(reply, "BADPIN", msg);
+        return false;
+    }
+    if (!pins_wired(p)){
+        snprintf(msg, sizeof(msg), "pin %.16s is not wired (TBD in the pin map)", name);
+        reply_err(reply, "BADPIN", msg);
+        return false;
+    }
+    return true;
+}
+
+// DELAY <from_pin> <from_edge> <to_pin> <to_edge> <timeout_ms>   (edges: RISING|FALLING|ANY)
+//   delay_ms      = time from the first from_edge on from_pin (the trigger) to the first
+//                   to_edge on to_pin after it, in ms (us resolution); null if none came
+//   to_edge_count = to_edges on to_pin from the trigger until timeout_ms after it
+// The reply always takes the full timeout after the trigger. The trigger must come within
+// timeout_ms of the request, otherwise ERR TIMEOUT: the rig failed to trigger. If from_pin
+// is a pin the board drives, the board's own DRIVE is the trigger (that needs ARM, since
+// DELAY blocks until it is done).
+static void cmd_delay(const struct args *a, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    const char* from_name = a->argv[1];
+    const char* to_name = a->argv[3];
+    const struct pin_def* from = pins_find(from_name);
+    const struct pin_def* to = pins_find(to_name);
+    uint8_t from_edge, to_edge;
+    uint32_t timeout_ms;
+    struct delay_raw raw;
+    struct reply_buf r;
+
+    if (!pin_usable(from, from_name, pins_is_gpio(from), "gpio", reply) ||
+        !pin_usable(to, to_name, pins_can_capture(to), "timer_capture", reply)){
+        return;
+    }
+    if ((from_edge = parse_edge(a->argv[2])) == 0){
+        reply_err(reply, "BADARG", "from_edge must be RISING, FALLING or ANY");
+        return;
+    }
+    if ((to_edge = parse_edge(a->argv[4])) == 0){
+        reply_err(reply, "BADARG", "to_edge must be RISING, FALLING or ANY");
+        return;
+    }
+    if (!parse_u32(a->argv[5], 10000, &timeout_ms) || timeout_ms < 1){
+        reply_err(reply, "BADARG", "timeout_ms must be 1-10000");
+        return;
+    }
+    // the STM32 has one edge interrupt line per pin number (PA3 and PB3 share line 3)
+    if (from->pin == to->pin && from->port != to->port){
+        snprintf(msg, sizeof(msg), "pins %.16s and %.16s share edge interrupt line %u",
+                 from_name, to_name, (unsigned)from->pin);
+        reply_err(reply, "BADARG", msg);
+        return;
+    }
+
+    struct delay_pin f = {from->port, from->pin, from_edge, pins_can_drive(from)};
+    struct delay_pin t = {to->port, to->pin, to_edge, pins_can_drive(to)};
+    int rc = delay_measure(&f, &t, timeout_ms, &raw);
+
+    if (rc == DELAY_NO_TRIGGER){
+        uint32_t window_ms = timeout_ms > DELAY_TRIGGER_MIN_MS ? timeout_ms : DELAY_TRIGGER_MIN_MS;
+        snprintf(msg, sizeof(msg), "no %s edge on %.16s within %u ms",
+                 a->argv[2], from_name, (unsigned)window_ms);
+        reply_err(reply, "TIMEOUT", msg);
+        return;
+    }
+    if (rc == DELAY_NO_PORT){
+        snprintf(msg, sizeof(msg), "no GPIO port for P%c%u or P%c%u",
+                 from->port, (unsigned)from->pin, to->port, (unsigned)to->pin);
+        reply_err(reply, "INTERNAL", msg);
+        return;
+    }
+    if (rc != DELAY_OK || raw.clock_hz == 0){
+        snprintf(msg, sizeof(msg), "edge interrupt setup failed on P%c%u or P%c%u",
+                 from->port, (unsigned)from->pin, to->port, (unsigned)to->pin);
+        reply_err(reply, "INTERNAL", msg);
+        return;
+    }
+
+    reply_begin(&r);
+    if (raw.to_count > 0){
+        // ticks -> us (= ms with 3 decimals); unsigned subtraction handles the counter wrap
+        uint64_t ticks = (uint32_t)(raw.first - raw.trigger);
+        reply_fixed(&r, "delay_ms", (int64_t)div_round(ticks * 1000000u, raw.clock_hz), 3);
+    }
+    else {
+        reply_null(&r, "delay_ms");    // to_pin never responded: a valid measurement
+    }
+    reply_int(&r, "to_edge_count", raw.to_count);
+    reply_send(&r, reply);
+}
+
 // Command Table
 // Need to add delay, uart, arm/collect here as they are implemented
 static const struct command commands[] = {
@@ -384,6 +505,7 @@ static const struct command commands[] = {
     {"RESET", 0, 0, cmd_reset},
     {"TRACE", 2, 2, cmd_trace},
     {"DRIVE", 2, 5, cmd_drive},
+    {"DELAY", 5, 5, cmd_delay},
 };
 
 
