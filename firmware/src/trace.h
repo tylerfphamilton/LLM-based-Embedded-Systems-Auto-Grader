@@ -4,6 +4,7 @@
 #ifndef GRADER_TRACE_H
 #define GRADER_TRACE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 // Edges stored per window. A reply line only has room for ~90 timestamps anyway; edges
@@ -20,15 +21,24 @@ struct trace_raw {
     uint8_t final_level;             // pin level (0/1) at the end of the window
 };
 
-// trace_measure return codes
+// trace_* return codes
 enum {
     TRACE_OK = 0,
     TRACE_NO_PORT = -1,     // the pin's GPIO port doesn't exist or isn't enabled
     TRACE_HW = -2,          // timebase, pin or edge interrupt could not be set up
 };
 
-// Record edges on STM32 pin P<port><pin> for window_ms and fill *out.
-// Blocks the calling thread for the window; edges are timestamped in an interrupt.
-int trace_measure(char port, uint8_t pin, uint32_t window_ms, struct trace_raw *out);
+// Start recording edges on STM32 pin P<port><pin> for window_ms into *out; returns at once.
+// Edges are timestamped in an interrupt. keep = true for a pin the board drives itself:
+// leave it as it is (driven or released) instead of making it an input with the
+// pull-down, so TRACE can watch the board's own DRIVE. One window at a time; *out must
+// stay valid until trace_finish.
+int trace_start(char port, uint8_t pin, bool keep, uint32_t window_ms, struct trace_raw *out);
+
+// Block until the window ends, stop and complete *out.
+int trace_finish(void);
+
+// Stop a running window without a result (RESET). Does nothing if none is running.
+void trace_cancel(void);
 
 #endif

@@ -668,3 +668,106 @@ def test_uart_rig_problems_are_errors(uart_cases) -> None:
         stm32, name = uart_cases[f"{key}_stm32"], uart_cases[f"{key}_name"]
         want = Err("BADPIN", f"no USART1 on {stm32} (pin {name})")
         assert uart_cases[case] == format_response(want), case
+
+
+# --------------------------------------------------------------------------- ARM / COLLECT
+
+
+@pytest.fixture
+def arm_cases(output, pinmap) -> dict[str, str]:
+    cases = dict(output[0])
+    if "arm_pins" not in cases:
+        pytest.skip("pin map needs two wired timer_capture pins and a wired drive pin")
+    cases["_cap1"], cases["_cap2"], cases["_drv"] = cases["arm_pins"].split()
+    return cases
+
+
+def test_trace_leaves_a_driven_pin_alone(arm_cases) -> None:
+    """TRACE on the drive pin keeps the board's own DRIVE (keep=1); inputs get the pull-down."""
+    assert arm_cases["trace_drv_keep"] == "1"
+    assert arm_cases["trace_in_keep"] == "0"
+
+
+def test_arm_runs_the_button_sequence(arm_cases, pinmap) -> None:
+    """ARM DELAY + ARM UART READ, then the press, then COLLECT both."""
+    assert arm_cases["arm_delay"] == ok(slot=0)
+    assert arm_cases["arm_uart"] == ok(slot=1)
+    assert arm_cases["arm_press"] == ok()
+    assert arm_cases["collect_delay"] == ok(delay_ms=3.25, to_edge_count=1)
+    assert arm_cases["collect_uart"] == ok(text=b"ON\r\n", byte_count=4, framing_errors=0)
+    # both measurements were running before the press and finished at COLLECT
+    assert arm_cases["arm_button_events"] == (
+        "delay_start uart_start drive delay_finish uart_finish"
+    )
+    # the trigger pin is the one the board drives, so it is left as it is (keep=1)
+    drv = _wired(pinmap.pins[arm_cases["_drv"]].stm32)
+    cap = _wired(pinmap.pins[arm_cases["_cap1"]].stm32)
+    assert drv and cap
+    want = f"{drv.group(1)} {int(drv.group(2))} 2 1 > {cap.group(1)} {int(cap.group(2))} 3 0 / 100"
+    assert arm_cases["arm_button_delay_call"] == want
+
+
+def test_collect_frees_the_slot(arm_cases) -> None:
+    assert arm_cases["arm_freq"] == ok(slot=0)
+    assert arm_cases["collect_freq"] == arm_cases["freq_1k"]  # the same reply as plain FREQ
+    noslot = format_response(Err("NOSLOT", "slot 0 is not armed"))
+    assert arm_cases["collect_again"] == noslot
+
+
+def test_busy_when_the_hardware_is_in_use(arm_cases) -> None:
+    cap1, cap2 = arm_cases["_cap1"], arm_cases["_cap2"]
+    assert arm_cases["arm_trace"] == ok(slot=0)
+    kind = format_response(Err("BUSY", "TRACE is already armed in slot 0"))
+    assert arm_cases["busy_kind"] == kind
+    assert arm_cases["busy_kind_now"] == kind  # a plain TRACE too
+    pin = format_response(Err("BUSY", f"pin {cap2} is in use by slot 0"))
+    assert arm_cases["busy_pin"] == pin
+    assert arm_cases["busy_pin_delay"] == pin
+    # other hardware runs next to an armed measurement
+    assert arm_cases["free_other"] == arm_cases["freq_1k"], cap1
+    blink = ok(edge_count=8, final_level=1, edges_ms=[100.0 + 250.0 * i for i in range(8)])
+    assert arm_cases["collect_trace"] == blink
+
+
+def test_uart_send_while_a_read_is_armed(arm_cases) -> None:
+    assert arm_cases["arm_uart2"] == ok(slot=0)
+    assert arm_cases["send_same_baud"] == ok()
+    busy = Err("BUSY", "UART READ at 9600 baud is armed in slot 0")
+    assert arm_cases["send_other_baud"] == format_response(busy)
+    assert arm_cases["send_other_baud_call"] == "-"
+
+
+def test_reset_stops_every_armed_measurement(arm_cases) -> None:
+    assert arm_cases["arm_trace2"] == ok(slot=1)
+    assert arm_cases["arm_reset"] == ok()
+    assert arm_cases["arm_reset_events"] == "uart_cancel trace_cancel"
+    noslot = format_response(Err("NOSLOT", "slot 0 is not armed"))
+    assert arm_cases["collect_after_reset"] == noslot
+
+
+def test_measurement_errors_arrive_at_collect(arm_cases) -> None:
+    assert arm_cases["arm_notrig"] == ok(slot=0)
+    notrig = Err("TIMEOUT", f"no FALLING edge on {arm_cases['_drv']} within 1000 ms")
+    assert arm_cases["collect_notrig"] == format_response(notrig)
+
+
+def test_arm_errors_take_no_slot(arm_cases) -> None:
+    only = "only measurements can be armed (FREQ, TRACE, DELAY, UART READ), not"
+    errors = {
+        "arm_none": "ERR BADCMD ARM takes 1-15 arguments, got 0",
+        "arm_drive": format_response(Err("BADCMD", f"{only} DRIVE")),
+        "arm_send": format_response(Err("BADCMD", "only UART READ can be armed")),
+        "arm_arm": format_response(Err("BADCMD", f"{only} ARM")),
+        "arm_unknown": format_response(Err("BADCMD", "unknown verb JUMP")),
+        "arm_arity": "ERR BADCMD FREQ takes 2 arguments, got 1",
+        "arm_badarg": format_response(Err("BADARG", "window_ms must be 1-10000")),
+        "arm_badpin": format_response(Err("BADPIN", "pin D99 is not in the pin map")),
+    }
+    for case, want in errors.items():
+        assert arm_cases[case] == want, case
+    assert arm_cases["arm_after_errors"] == ok(slot=0)  # none of them took a slot
+    for case, slot in (("collect_bad", "4"), ("collect_word", "x")):
+        noslot = Err("NOSLOT", f"slot {slot} is not armed")
+        assert arm_cases[case] == format_response(noslot), case
+    assert arm_cases["collect_none"] == "ERR BADCMD COLLECT takes 1 arguments, got 0"
+    assert arm_cases["arm_cleanup"] == arm_cases["freq_1k"]

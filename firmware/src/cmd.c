@@ -19,6 +19,9 @@
 // Size of the buffer for formatted error messages (reply_err adds "ERR <CODE> ")
 #define REPLY_MAX 128
 
+// measurements that can be armed at once (protocol: at least 4)
+#define ARM_SLOTS 4
+
 // struct for the args ()
 struct args {
     int argc;               // number of tokens. including the verb
@@ -28,13 +31,41 @@ struct args {
 // function to send its one reply through
 typedef void (*handler_fn)(const struct args *a, reply_fn reply);
 
+// the measurements: each one can run on its own (FREQ ...) or be armed (ARM FREQ ...)
+enum meas_kind {
+    M_NONE = -1,    // not a measurement (PING, DRIVE, ...)
+    M_FREQ,
+    M_TRACE,
+    M_DELAY,
+    M_UART,         // UART READ
+    M_KINDS,
+};
+
 // One row of the command table: which verb, how many arguments it accepts, and which function handles it.
 struct command {
     const char* verb;       // verb: PING, FREQ, etc.
     int min_args;           // fewest args after the vern
     int max_args;           // most args after the verb
     handler_fn handler;     // function called when the verb matches and the count is OK
-};  
+    int meas;               // enum meas_kind: which measurement ARM starts for this verb
+};
+
+// One running measurement: what it uses (to refuse a second one that would share the
+// hardware) and what its finish half needs to build the reply
+struct meas {
+    enum meas_kind kind;
+    const struct pin_def* pins[2];  // pins it watches (NULL = unused)
+    bool exti;                      // it watches them with edge interrupts (EXTI lines)
+    uint32_t ms;                    // DELAY: timeout_ms
+    uint32_t baud;                  // UART READ: baud
+    char edge[8];                   // DELAY: from_edge as sent (for the TIMEOUT message)
+};
+
+// armed measurements, by slot number (freed by COLLECT and RESET)
+static struct meas slots[ARM_SLOTS];
+static bool slot_used[ARM_SLOTS];
+
+static const char* const kind_names[M_KINDS] = {"FREQ", "TRACE", "DELAY", "UART READ"};
 
 
 // ---------------------- handlers -----------------------------
@@ -78,47 +109,102 @@ static uint64_t div_round(uint64_t num, uint64_t den){
     return (num + den / 2) / den;
 }
 
+// ERR BUSY if a new measurement would share hardware with an armed one: the same kind
+// (each module runs one at a time), the same pin, or, when both use edge interrupts, the
+// same EXTI line (the STM32 has one per pin number: PA3 and PB3 share line 3)
+static bool hardware_free(const struct meas *m, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    for (int s = 0; s < ARM_SLOTS; s++){
+        if (!slot_used[s]){
+            continue;
+        }
+        const struct meas *o = &slots[s];
+        if (o->kind == m->kind){
+            snprintf(msg, sizeof(msg), "%s is already armed in slot %d", kind_names[m->kind], s);
+            reply_err(reply, "BUSY", msg);
+            return false;
+        }
+        for (int i = 0; i < 2; i++){
+            for (int j = 0; j < 2; j++){
+                const struct pin_def *mine = m->pins[i], *theirs = o->pins[j];
+                if (mine == NULL || theirs == NULL){
+                    continue;
+                }
+                if (mine == theirs){
+                    snprintf(msg, sizeof(msg), "pin %.16s is in use by slot %d", mine->name, s);
+                    reply_err(reply, "BUSY", msg);
+                    return false;
+                }
+                if (m->exti && o->exti && mine->pin == theirs->pin){
+                    snprintf(msg, sizeof(msg), "pin %.16s shares edge interrupt line %u with slot %d",
+                             mine->name, (unsigned)mine->pin, s);
+                    reply_err(reply, "BUSY", msg);
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
 // FREQ <pin> <window_ms>: frequency and duty cycle of the signal on <pin> over the window
 //   frequency_hz = (rising edges - 1) / (time from first to last rising edge)
 //   duty_pct     = average high time / average period
 //   edge_count   = rising edges in the window
 // Fewer than 2 rising edges is a valid "no signal" result: frequency and duty are null.
-static void cmd_freq(const struct args *a, reply_fn reply){
+static bool freq_start(const struct args *a, struct meas *m, reply_fn reply){
 
     char msg[REPLY_MAX];
     const char* name = a->argv[1];
     const struct pin_def* p = pins_find(name);
     uint32_t window_ms;
-    struct capture_raw raw;
-    struct reply_buf r;
 
     if (p == NULL){
         snprintf(msg, sizeof(msg), "pin %.16s is not in the pin map", name);
         reply_err(reply, "BADPIN", msg);
-        return;
+        return false;
     }
     if (!pins_can_capture(p)){
         snprintf(msg, sizeof(msg), "pin %.16s has no timer_capture capability", name);
         reply_err(reply, "BADPIN", msg);
-        return;
+        return false;
     }
     if (!pins_wired(p)){
         snprintf(msg, sizeof(msg), "pin %.16s is not wired (TBD in the pin map)", name);
         reply_err(reply, "BADPIN", msg);
-        return;
+        return false;
     }
     if (!parse_u32(a->argv[2], 10000, &window_ms) || window_ms < 1){
         reply_err(reply, "BADARG", "window_ms must be 1-10000");
-        return;
+        return false;
     }
 
-    int rc = capture_measure(p->port, p->pin, window_ms, &raw);
+    m->kind = M_FREQ;
+    m->pins[0] = p;
+    if (!hardware_free(m, reply)){
+        return false;
+    }
+    int rc = capture_start(p->port, p->pin, window_ms);
     if (rc == CAPTURE_NO_TIMER){
         snprintf(msg, sizeof(msg), "no capture timer on P%c%u (pin %.16s)", p->port, (unsigned)p->pin, name);
         reply_err(reply, "BADPIN", msg);
-        return;
+        return false;
     }
     if (rc != CAPTURE_OK){
+        reply_err(reply, "INTERNAL", "capture timer setup failed");
+        return false;
+    }
+    return true;
+}
+
+static void freq_finish(struct meas *m, reply_fn reply){
+
+    struct capture_raw raw;
+    struct reply_buf r;
+    (void) m;
+
+    if (capture_finish(&raw) != CAPTURE_OK){
         reply_err(reply, "INTERNAL", "capture timer setup failed");
         return;
     }
@@ -175,7 +261,9 @@ static void cmd_wait(const struct args *a, reply_fn reply){
 
 // RESET: one pulse on the student board's RST line (the pin-map row with the reset
 // capability). Replies OK once the line is released; the plan's WAIT gives the board time
-// to boot. Later this also frees ARM slots.
+// to boot. Every armed measurement is stopped and its slot freed first.
+static void cancel_all(void);
+
 static void cmd_reset(const struct args *a, reply_fn reply){
 
     char msg[REPLY_MAX];
@@ -183,6 +271,7 @@ static void cmd_reset(const struct args *a, reply_fn reply){
     const struct pin_def* p = pins_reset_line();
     (void) a;
 
+    cancel_all();
     if (p == NULL){
         reply_err(reply, "BADPIN", "no reset line in the pin map");
         return;
@@ -208,44 +297,64 @@ static void cmd_reset(const struct args *a, reply_fn reply){
 //   edges_ms    = time of each edge from the start of the window, in ms (us resolution)
 // If the list doesn't fit in one reply line, or more edges came than the firmware stores,
 // the list is cut short and the reply says truncated=1; edge_count is still the full count.
+// On a pin the board drives (D2), TRACE leaves the pin alone and sees the board's own DRIVE.
 static struct trace_raw trace_buf;            // ~1 KB: kept off the stack
 static int64_t trace_us[TRACE_MAX_EDGES];     // edge times in us (= ms with 3 decimals)
 
-static void cmd_trace(const struct args *a, reply_fn reply){
+static bool trace_start_cmd(const struct args *a, struct meas *m, reply_fn reply){
 
     char msg[REPLY_MAX];
     const char* name = a->argv[1];
     const struct pin_def* p = pins_find(name);
     uint32_t window_ms;
-    struct reply_buf r;
 
     if (p == NULL){
         snprintf(msg, sizeof(msg), "pin %.16s is not in the pin map", name);
         reply_err(reply, "BADPIN", msg);
-        return;
+        return false;
     }
     if (!pins_is_gpio(p)){
         snprintf(msg, sizeof(msg), "pin %.16s has no gpio capability", name);
         reply_err(reply, "BADPIN", msg);
-        return;
+        return false;
     }
     if (!pins_wired(p)){
         snprintf(msg, sizeof(msg), "pin %.16s is not wired (TBD in the pin map)", name);
         reply_err(reply, "BADPIN", msg);
-        return;
+        return false;
     }
     if (!parse_u32(a->argv[2], 10000, &window_ms) || window_ms < 1){
         reply_err(reply, "BADARG", "window_ms must be 1-10000");
-        return;
+        return false;
     }
 
-    int rc = trace_measure(p->port, p->pin, window_ms, &trace_buf);
+    m->kind = M_TRACE;
+    m->pins[0] = p;
+    m->exti = true;
+    if (!hardware_free(m, reply)){
+        return false;
+    }
+    int rc = trace_start(p->port, p->pin, pins_can_drive(p), window_ms, &trace_buf);
     if (rc == TRACE_NO_PORT){
         snprintf(msg, sizeof(msg), "no GPIO port %c (pin %.16s)", p->port, name);
         reply_err(reply, "INTERNAL", msg);
-        return;
+        return false;
     }
-    if (rc != TRACE_OK || trace_buf.clock_hz == 0){
+    if (rc != TRACE_OK){
+        snprintf(msg, sizeof(msg), "edge capture setup failed on P%c%u", p->port, (unsigned)p->pin);
+        reply_err(reply, "INTERNAL", msg);
+        return false;
+    }
+    return true;
+}
+
+static void trace_finish_cmd(struct meas *m, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    const struct pin_def* p = m->pins[0];
+    struct reply_buf r;
+
+    if (trace_finish() != TRACE_OK || trace_buf.clock_hz == 0){
         snprintf(msg, sizeof(msg), "edge capture setup failed on P%c%u", p->port, (unsigned)p->pin);
         reply_err(reply, "INTERNAL", msg);
         return;
@@ -421,10 +530,10 @@ static bool pin_usable(const struct pin_def* p, const char* name, bool has_cap,
 //                   to_edge on to_pin after it, in ms (us resolution); null if none came
 //   to_edge_count = to_edges on to_pin from the trigger until timeout_ms after it
 // The reply always takes the full timeout after the trigger. The trigger must come within
-// timeout_ms of the request, otherwise ERR TIMEOUT: the rig failed to trigger. If from_pin
-// is a pin the board drives, the board's own DRIVE is the trigger (that needs ARM, since
-// DELAY blocks until it is done).
-static void cmd_delay(const struct args *a, reply_fn reply){
+// max(timeout_ms, 1000 ms) of the request, otherwise ERR TIMEOUT: the rig failed to
+// trigger. If from_pin is a pin the board drives, the board's own DRIVE is the trigger:
+// ARM DELAY ..., then DRIVE ..., then COLLECT.
+static bool delay_start_cmd(const struct args *a, struct meas *m, reply_fn reply){
 
     char msg[REPLY_MAX];
     const char* from_name = a->argv[1];
@@ -433,48 +542,73 @@ static void cmd_delay(const struct args *a, reply_fn reply){
     const struct pin_def* to = pins_find(to_name);
     uint8_t from_edge, to_edge;
     uint32_t timeout_ms;
-    struct delay_raw raw;
-    struct reply_buf r;
 
     if (!pin_usable(from, from_name, pins_is_gpio(from), "gpio", reply) ||
         !pin_usable(to, to_name, pins_can_capture(to), "timer_capture", reply)){
-        return;
+        return false;
     }
     if ((from_edge = parse_edge(a->argv[2])) == 0){
         reply_err(reply, "BADARG", "from_edge must be RISING, FALLING or ANY");
-        return;
+        return false;
     }
     if ((to_edge = parse_edge(a->argv[4])) == 0){
         reply_err(reply, "BADARG", "to_edge must be RISING, FALLING or ANY");
-        return;
+        return false;
     }
     if (!parse_u32(a->argv[5], 10000, &timeout_ms) || timeout_ms < 1){
         reply_err(reply, "BADARG", "timeout_ms must be 1-10000");
-        return;
+        return false;
     }
     // the STM32 has one edge interrupt line per pin number (PA3 and PB3 share line 3)
     if (from->pin == to->pin && from->port != to->port){
         snprintf(msg, sizeof(msg), "pins %.16s and %.16s share edge interrupt line %u",
                  from_name, to_name, (unsigned)from->pin);
         reply_err(reply, "BADARG", msg);
-        return;
+        return false;
+    }
+
+    m->kind = M_DELAY;
+    m->pins[0] = from;
+    m->pins[1] = to;
+    m->exti = true;
+    m->ms = timeout_ms;
+    snprintf(m->edge, sizeof(m->edge), "%.7s", a->argv[2]);
+    if (!hardware_free(m, reply)){
+        return false;
     }
 
     struct delay_pin f = {from->port, from->pin, from_edge, pins_can_drive(from)};
     struct delay_pin t = {to->port, to->pin, to_edge, pins_can_drive(to)};
-    int rc = delay_measure(&f, &t, timeout_ms, &raw);
-
-    if (rc == DELAY_NO_TRIGGER){
-        uint32_t window_ms = timeout_ms > DELAY_TRIGGER_MIN_MS ? timeout_ms : DELAY_TRIGGER_MIN_MS;
-        snprintf(msg, sizeof(msg), "no %s edge on %.16s within %u ms",
-                 a->argv[2], from_name, (unsigned)window_ms);
-        reply_err(reply, "TIMEOUT", msg);
-        return;
-    }
+    int rc = delay_start(&f, &t, timeout_ms);
     if (rc == DELAY_NO_PORT){
         snprintf(msg, sizeof(msg), "no GPIO port for P%c%u or P%c%u",
                  from->port, (unsigned)from->pin, to->port, (unsigned)to->pin);
         reply_err(reply, "INTERNAL", msg);
+        return false;
+    }
+    if (rc != DELAY_OK){
+        snprintf(msg, sizeof(msg), "edge interrupt setup failed on P%c%u or P%c%u",
+                 from->port, (unsigned)from->pin, to->port, (unsigned)to->pin);
+        reply_err(reply, "INTERNAL", msg);
+        return false;
+    }
+    return true;
+}
+
+static void delay_finish_cmd(struct meas *m, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    const struct pin_def* from = m->pins[0];
+    const struct pin_def* to = m->pins[1];
+    struct delay_raw raw;
+    struct reply_buf r;
+
+    int rc = delay_finish(&raw);
+    if (rc == DELAY_NO_TRIGGER){
+        uint32_t window_ms = m->ms > DELAY_TRIGGER_MIN_MS ? m->ms : DELAY_TRIGGER_MIN_MS;
+        snprintf(msg, sizeof(msg), "no %s edge on %.16s within %u ms",
+                 m->edge, from->name, (unsigned)window_ms);
+        reply_err(reply, "TIMEOUT", msg);
         return;
     }
     if (rc != DELAY_OK || raw.clock_hz == 0){
@@ -540,8 +674,23 @@ static size_t str_cost(uint8_t b){
     return (b >= 0x21 && b <= 0x7E && b != '%' && b != '"' && b != ',') ? 1 : 3;
 }
 
+// UART <baud> ...: the baud must be one of uart_bauds; otherwise sends ERR BADARG
+static bool parse_baud(const char* s, uint32_t* baud, reply_fn reply){
+
+    if (parse_u32(s, 230400, baud)){
+        for (size_t i = 0; i < sizeof(uart_bauds) / sizeof(uart_bauds[0]); i++){
+            if (*baud == uart_bauds[i]){
+                return true;
+            }
+        }
+    }
+    reply_err(reply, "BADARG", "baud must be 300, 1200, 2400, 4800, 9600, 19200, 38400, "
+                               "57600, 115200 or 230400");
+    return false;
+}
+
 // UART <baud> SEND <hex>: send the bytes to the student's Serial1 RX (8N1). OK once the
-// last byte is out.
+// last byte is out. Allowed while a UART READ is armed at the same baud.
 static void uart_send(uint32_t baud, const char* hex, reply_fn reply){
 
     static uint8_t payload[PROTO_LINE_MAX / 2];
@@ -566,6 +715,15 @@ static void uart_send(uint32_t baud, const char* hex, reply_fn reply){
         }
         payload[i] = (uint8_t)(hi << 4 | lo);
     }
+    // the USART has one baud for both directions
+    for (int s = 0; s < ARM_SLOTS; s++){
+        if (slot_used[s] && slots[s].kind == M_UART && slots[s].baud != baud){
+            snprintf(msg, sizeof(msg), "UART READ at %u baud is armed in slot %d",
+                     (unsigned)slots[s].baud, s);
+            reply_err(reply, "BUSY", msg);
+            return;
+        }
+    }
 
     int rc = su_send(p->port, p->pin, baud, payload, len / 2);
     if (rc == SU_NO_USART){
@@ -589,28 +747,56 @@ static void uart_send(uint32_t baud, const char* hex, reply_fn reply){
 // the text is cut short and truncated=1 follows it; byte_count is still the full count.
 static struct su_raw uart_buf;      // ~1 KB: kept off the stack
 
-static void uart_read(uint32_t baud, const char* window, reply_fn reply){
+static bool uart_read_start(const struct args *a, struct meas *m, reply_fn reply){
 
     char msg[REPLY_MAX];
-    uint32_t window_ms;
-    struct reply_buf r;
+    uint32_t baud, window_ms;
 
+    if (!parse_baud(a->argv[1], &baud, reply)){
+        return false;
+    }
+    if (strcmp(a->argv[2], "SEND") == 0){
+        reply_err(reply, "BADCMD", "only UART READ can be armed");
+        return false;
+    }
+    if (strcmp(a->argv[2], "READ") != 0){
+        reply_err(reply, "BADARG", "mode must be SEND or READ");
+        return false;
+    }
     const struct pin_def* p = uart_line(pins_uart_rx_line(), "uart_rx", reply);
     if (p == NULL){
-        return;
+        return false;
     }
-    if (!parse_u32(window, 10000, &window_ms) || window_ms < 1){
+    if (!parse_u32(a->argv[3], 10000, &window_ms) || window_ms < 1){
         reply_err(reply, "BADARG", "window_ms must be 1-10000");
-        return;
+        return false;
     }
 
-    int rc = su_read(p->port, p->pin, baud, window_ms, &uart_buf);
+    m->kind = M_UART;
+    m->pins[0] = p;
+    m->baud = baud;
+    if (!hardware_free(m, reply)){
+        return false;
+    }
+    int rc = su_read_start(p->port, p->pin, baud, window_ms);
     if (rc == SU_NO_USART){
         snprintf(msg, sizeof(msg), "no USART1 on P%c%u (pin %.16s)", p->port, (unsigned)p->pin, p->name);
         reply_err(reply, "BADPIN", msg);
-        return;
+        return false;
     }
     if (rc != SU_OK){
+        reply_err(reply, "INTERNAL", "student UART setup failed");
+        return false;
+    }
+    return true;
+}
+
+static void uart_read_finish(struct meas *m, reply_fn reply){
+
+    struct reply_buf r;
+    (void) m;
+
+    if (su_read_finish(&uart_buf) != SU_OK){
         reply_err(reply, "INTERNAL", "student UART setup failed");
         return;
     }
@@ -639,48 +825,191 @@ static void uart_read(uint32_t baud, const char* window, reply_fn reply){
     reply_send(&r, reply);
 }
 
+// ------------------------------ start / finish / ARM / COLLECT ------------------------------
+// Every measurement runs in two halves:
+//   start:  check the arguments, make sure no armed measurement uses the same hardware,
+//           and start it; on any problem it sends the ERR reply and returns false
+//   finish: wait until the measurement is done and send its reply
+// A plain request (FREQ ...) runs both halves back to back. ARM runs the start half and
+// replies with a slot number at once; COLLECT runs the finish half later. In between, the
+// host sends the stimulus (DRIVE, UART SEND) that the measurement should see.
+
+struct meas_ops {
+    bool (*start)(const struct args *a, struct meas *m, reply_fn reply);
+    void (*finish)(struct meas *m, reply_fn reply);
+    void (*cancel)(void);       // stop without a reply (RESET)
+};
+
+static const struct meas_ops ops[M_KINDS] = {
+    [M_FREQ] = {freq_start, freq_finish, capture_cancel},
+    [M_TRACE] = {trace_start_cmd, trace_finish_cmd, trace_cancel},
+    [M_DELAY] = {delay_start_cmd, delay_finish_cmd, delay_cancel},
+    [M_UART] = {uart_read_start, uart_read_finish, su_read_cancel},
+};
+
+// a plain (blocking) measurement request
+static void run_now(enum meas_kind kind, const struct args *a, reply_fn reply){
+
+    struct meas m = {0};
+    if (ops[kind].start(a, &m, reply)){
+        ops[kind].finish(&m, reply);
+    }
+}
+
+static void cmd_freq(const struct args *a, reply_fn reply){
+    run_now(M_FREQ, a, reply);
+}
+
+static void cmd_trace(const struct args *a, reply_fn reply){
+    run_now(M_TRACE, a, reply);
+}
+
+static void cmd_delay(const struct args *a, reply_fn reply){
+    run_now(M_DELAY, a, reply);
+}
+
 // UART <baud> SEND <hex>  |  UART <baud> READ <window_ms>
 static void cmd_uart(const struct args *a, reply_fn reply){
 
     uint32_t baud;
-    bool standard = false;
-
-    if (parse_u32(a->argv[1], 230400, &baud)){
-        for (size_t i = 0; i < sizeof(uart_bauds) / sizeof(uart_bauds[0]); i++){
-            standard = standard || baud == uart_bauds[i];
-        }
-    }
-    if (!standard){
-        reply_err(reply, "BADARG", "baud must be 300, 1200, 2400, 4800, 9600, 19200, 38400, "
-                                   "57600, 115200 or 230400");
+    if (!parse_baud(a->argv[1], &baud, reply)){
         return;
     }
     if (strcmp(a->argv[2], "SEND") == 0){
         uart_send(baud, a->argv[3], reply);
     }
     else if (strcmp(a->argv[2], "READ") == 0){
-        uart_read(baud, a->argv[3], reply);
+        run_now(M_UART, a, reply);
     }
     else {
         reply_err(reply, "BADARG", "mode must be SEND or READ");
     }
 }
 
+// stop every armed measurement and free its slot (RESET)
+static void cancel_all(void){
+
+    for (int s = 0; s < ARM_SLOTS; s++){
+        if (slot_used[s]){
+            ops[slots[s].kind].cancel();
+            slot_used[s] = false;
+        }
+    }
+}
+
+static const struct command* find_command(const char* verb);
+static bool arity_ok(const struct command* c, int n, reply_fn reply);
+
+// ARM <measurement request>: start the measurement in the background and reply
+// OK slot=<n> at once. Its result comes from COLLECT <n>.
+static void cmd_arm(const struct args *a, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    struct args inner;
+    struct reply_buf r;
+
+    // the request after ARM, as if it had been sent on its own
+    inner.argc = a->argc - 1;
+    for (int i = 0; i < inner.argc; i++){
+        inner.argv[i] = a->argv[i + 1];
+    }
+
+    const struct command* c = find_command(inner.argv[0]);
+    if (c == NULL){
+        snprintf(msg, sizeof(msg), "unknown verb %.32s", inner.argv[0]);
+        reply_err(reply, "BADCMD", msg);
+        return;
+    }
+    if (c->meas == M_NONE){
+        snprintf(msg, sizeof(msg), "only measurements can be armed (FREQ, TRACE, DELAY, UART READ), not %.16s", c->verb);
+        reply_err(reply, "BADCMD", msg);
+        return;
+    }
+    if (!arity_ok(c, inner.argc - 1, reply)){
+        return;
+    }
+
+    int s = 0;
+    while (s < ARM_SLOTS && slot_used[s]){
+        s++;
+    }
+    if (s == ARM_SLOTS){
+        snprintf(msg, sizeof(msg), "all %d slots are armed", ARM_SLOTS);
+        reply_err(reply, "BUSY", msg);
+        return;
+    }
+
+    slots[s] = (struct meas){0};
+    if (!ops[c->meas].start(&inner, &slots[s], reply)){
+        return;
+    }
+    slot_used[s] = true;
+
+    reply_begin(&r);
+    reply_int(&r, "slot", s);
+    reply_send(&r, reply);
+}
+
+// COLLECT <slot>: wait for that armed measurement to finish and reply with its normal
+// result (or its error). The slot is free again afterwards.
+static void cmd_collect(const struct args *a, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    uint32_t s;
+
+    if (!parse_u32(a->argv[1], ARM_SLOTS - 1, &s) || !slot_used[s]){
+        snprintf(msg, sizeof(msg), "slot %.16s is not armed", a->argv[1]);
+        reply_err(reply, "NOSLOT", msg);
+        return;
+    }
+    slot_used[s] = false;
+    ops[slots[s].kind].finish(&slots[s], reply);
+}
+
 // Command Table
-// Need to add delay, uart, arm/collect here as they are implemented
 static const struct command commands[] = {
-    {"PING", 0, 0, cmd_ping},
-    {"FREQ", 2, 2, cmd_freq},
-    {"WAIT", 1, 1, cmd_wait},
-    {"RESET", 0, 0, cmd_reset},
-    {"TRACE", 2, 2, cmd_trace},
-    {"DRIVE", 2, 5, cmd_drive},
-    {"DELAY", 5, 5, cmd_delay},
-    {"UART", 3, 3, cmd_uart},
+    {"PING", 0, 0, cmd_ping, M_NONE},
+    {"FREQ", 2, 2, cmd_freq, M_FREQ},
+    {"WAIT", 1, 1, cmd_wait, M_NONE},
+    {"RESET", 0, 0, cmd_reset, M_NONE},
+    {"TRACE", 2, 2, cmd_trace, M_TRACE},
+    {"DRIVE", 2, 5, cmd_drive, M_NONE},
+    {"DELAY", 5, 5, cmd_delay, M_DELAY},
+    {"UART", 3, 3, cmd_uart, M_UART},
+    {"ARM", 1, MAX_ARGS - 1, cmd_arm, M_NONE},
+    {"COLLECT", 1, 1, cmd_collect, M_NONE},
 };
 
 
 // ------------------------------ dispatch -----------------------------------
+
+// the table row for a verb, or NULL
+static const struct command* find_command(const char* verb){
+
+    for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++){
+        if (strcmp(verb, commands[i].verb) == 0){
+            return &commands[i];
+        }
+    }
+    return NULL;
+}
+
+// n arguments (not counting the verb) are allowed for c; otherwise sends ERR BADCMD
+static bool arity_ok(const struct command* c, int n, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    if (n >= c->min_args && n <= c->max_args){
+        return true;
+    }
+    if (c->min_args == c->max_args){
+        snprintf(msg, sizeof(msg), "%s takes %d arguments, got %d", c->verb, c->min_args, n);
+    }
+    else {
+        snprintf(msg, sizeof(msg), "%s takes %d-%d arguments, got %d", c->verb, c->min_args, c->max_args, n);
+    }
+    reply_err(reply, "BADCMD", msg);
+    return false;
+}
 
 // split on single or repeated spaces, returns -1 if there are too many tokens
 static int split(char* line, struct args* a){
@@ -715,7 +1044,7 @@ static int split(char* line, struct args* a){
     return 0;
 }
 
-// Handle one request line: split it find the verb in the commands, check number of args, and call the handler
+// Handle one request line: split it, find the verb in the commands, check number of args, and call the handler
 void cmd_handle(char* line, reply_fn reply){
 
     // buffer for building the message and the split request (a)
@@ -734,38 +1063,15 @@ void cmd_handle(char* line, reply_fn reply){
         return;
     }
 
-    // parsing through the available commands (only have PING right now)
-    for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++){
-
-        // the current command that is being processed
-        const struct command *c = &commands[i];
-
-        // comapres the strings to see if the verb and arg match
-        if (strcmp(a.argv[0], c->verb) != 0){
-            continue;
-        }
-
-        // number of args, not counting the verb itself
-        int n = a.argc - 1;
-
-        // wrong arg count: reply with what was expected
-        if (n < c->min_args || n > c->max_args){
-            if (c->min_args == c->max_args){
-                snprintf(msg, sizeof(msg), "%s takes %d arguments, got %d", c->verb, c->min_args, n);
-            }
-            else {
-                snprintf(msg, sizeof(msg), "%s takes %d-%d arguments, got %d", c->verb, c->min_args, c->max_args, n);
-            }
-            reply_err(reply, "BADCMD", msg);
-            return;
-        }
-
-        // verb and arg count are valid: handler checks the arg
-        c->handler(&a, reply);
+    const struct command *c = find_command(a.argv[0]);
+    if (c == NULL){
+        snprintf(msg, sizeof(msg), "unknown verb %.32s", a.argv[0]);
+        reply_err(reply, "BADCMD", msg);
         return;
     }
 
-    // No row matches.
-    snprintf(msg, sizeof(msg), "unknown verb %.32s", a.argv[0]);
-    reply_err(reply, "BADCMD", msg);
+    // verb and arg count are valid: handler checks the args
+    if (arity_ok(c, a.argc - 1, reply)){
+        c->handler(&a, reply);
+    }
 }

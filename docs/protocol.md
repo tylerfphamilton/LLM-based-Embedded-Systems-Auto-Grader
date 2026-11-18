@@ -110,8 +110,10 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   decimals). The firmware stores up to 256 edges and a reply line holds about 90; if the
   list is cut short for either reason the reply ends with `truncated=1`, and `edge_count`
   is still the full count. Edges are timestamped in an interrupt from the shared 80 MHz
-  timebase (TIM5), so edges closer together than a few microseconds can be missed. An
-  undriven pin reads 0 (internal pull-down).
+  timebase (TIM5), so edges closer together than a few microseconds can be missed. An   
+  undriven pin reads 0 (internal pull-down). On a pin with the `drive` capability TRACE
+  leaves the pin as `DRIVE` set it, so `ARM TRACE D2 …` + `DRIVE D2 BOUNCE …` records
+  the board's own bounce.
 * `UART READ`: receives the raw bytes on the pin with the `uart_rx` capability (the
   student's Serial1 TX), 8N1 at the given baud, for `window_ms` (1–10000). Bytes with
   framing errors are still reported (as received) and counted in `framing_errors`, so a
@@ -121,11 +123,25 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   `byte_count` is still the full count. The rx pin has the internal pull-up, so an
   undriven line reads as an idle UART. Bytes lost because the board read too slowly give
   `ERR INTERNAL uart overrun …` (a rig fault).
-* `ARM` / `COLLECT`: several measurements may be armed at once (at least 4 slots).
-  Slots are freed by `COLLECT` and by `RESET`. Typical sequence:
+* `ARM` / `COLLECT`: `ARM <request>` takes a measurement request (`FREQ`, `TRACE`, `DELAY`
+  or `UART … READ`), checks it exactly as the plain request would (same `ERR` replies),
+  starts it and replies `OK slot=<n>` at once; its window or timeout starts then.
+  `COLLECT <n>` blocks until it is done and replies with the plain request's reply,
+  including its errors (e.g. `ERR TIMEOUT` for a DELAY that never triggered). Up to 4
+  measurements may be armed at once, in slots 0–3 (the lowest free one is used). Slots are
+  freed by `COLLECT` (whatever its reply) and by `RESET`, which stops every armed
+  measurement first. Typical sequence:
   `ARM DELAY D2 FALLING D13 ANY 100` → `OK slot=0`, `ARM UART 9600 READ 200` →
   `OK slot=1`, `DRIVE D2 BOUNCE 5 200 LOW` → `OK`, `COLLECT 0` → `OK delay_ms=…`,
   `COLLECT 1` → `OK text=…`.
+  * Each kind of measurement runs one at a time, and two measurements can't share a pin
+    (or, for `TRACE`/`DELAY`, an edge interrupt line: same pin number on another port).
+    A request that would is refused with `ERR BUSY …` (e.g. `TRACE is already armed in
+    slot 0`, `pin D13 is in use by slot 0`), plain or armed. Stimuli (`DRIVE`, `WAIT`,
+    `UART SEND`) run while measurements are armed; `UART SEND` at a different baud from
+    an armed `UART READ` is `ERR BUSY` (the USART has one baud).
+  * `ARM` of anything else is `ERR BADCMD`; no free slot is `ERR BUSY all 4 slots are
+    armed`; `COLLECT` of a slot that isn't armed is `ERR NOSLOT slot <n> is not armed`.
 
 ### Handshake (`PING`) and resync
 

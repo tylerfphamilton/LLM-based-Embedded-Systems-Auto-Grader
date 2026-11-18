@@ -273,11 +273,12 @@ int su_read_finish(struct su_raw *out){
     return SU_OK;
 }
 
-int su_read(char rx_port, uint8_t rx_pin, uint32_t baud, uint32_t window_ms, struct su_raw *out){
+void su_read_cancel(void){
 
-    int rc = su_read_start(rx_port, rx_pin, baud, window_ms);
-    if (rc != SU_OK){
-        return rc;
+    if (receiving){
+        LL_USART_DisableIT_RXNE(SU_USART);
+        unsigned int key = irq_lock();
+        receiving = false;
+        irq_unlock(key);
     }
-    return su_read_finish(out);
 }

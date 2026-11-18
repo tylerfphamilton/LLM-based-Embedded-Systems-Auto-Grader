@@ -19,9 +19,8 @@ enum {
     DELAY_OK = 0,
     DELAY_NO_PORT = -1,     // a pin's GPIO port doesn't exist or isn't enabled
     DELAY_HW = -2,          // timebase, pin or edge interrupt could not be set up
-    DELAY_NO_TRIGGER = -3,  // from_pin never made its edge within timeout_ms (a rig fault)
+    DELAY_NO_TRIGGER = -3,  // from_pin never made its edge in the trigger window (a rig fault)
 };
-
 
 // The trigger may come up to max(timeout_ms, DELAY_TRIGGER_MIN_MS) after the start, so a
 // short timeout still catches a slow periodic trigger (a 2 Hz blink). The reply then takes
@@ -45,18 +44,17 @@ struct delay_raw {
     uint32_t to_count;   // matching edges on to_pin from the trigger until timeout after it
 };
 
-// Start watching: from now on, the first matching edge on `from` within timeout_ms is the
-// trigger, and matching edges on `to` up to timeout_ms after the trigger are counted.
-// Returns at once. (ARM/COLLECT will call start and finish separately.)
+// Start watching: from now on, the first matching edge on `from` within the trigger window
+// (see DELAY_TRIGGER_MIN_MS) is the trigger, and matching edges on `to` up to timeout_ms
+// after the trigger are counted. Returns at once. One measurement at a time.
 int delay_start(const struct delay_pin *from, const struct delay_pin *to, uint32_t timeout_ms);
 
-// Block until the measurement is over (no trigger within timeout_ms of delay_start, or
+// Block until the measurement is over (no trigger within the trigger window, or
 // timeout_ms after the trigger), stop watching and fill *out. DELAY_NO_TRIGGER if the
 // trigger never came.
 int delay_finish(struct delay_raw *out);
 
-// delay_start + delay_finish: the blocking DELAY command.
-int delay_measure(const struct delay_pin *from, const struct delay_pin *to, uint32_t timeout_ms,
-                  struct delay_raw *out);
+// Stop a running measurement without a result (RESET). Does nothing if none is running.
+void delay_cancel(void);
 
 #endif
