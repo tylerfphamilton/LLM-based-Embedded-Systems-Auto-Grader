@@ -12,11 +12,33 @@
 
 #include "capture.h"
 #include "cmd.h"
+#include "drive.h"
 #include "pins_gen.h"
 #include "reply.h"
 #include "rig.h"
 #include "trace.h"
 
+
+/* drive.c is Zephyr + GPIO; these stand-ins record the call (or "-" if none was made). */
+static char stub_drive_call[64];
+static int stub_drive_rc;
+
+int drive_set(char port, uint8_t pin, int level) {
+    snprintf(stub_drive_call, sizeof(stub_drive_call), "set %c %u %d", port, pin, level);
+    return stub_drive_rc;
+}
+
+int drive_pulse(char port, uint8_t pin, int level, uint32_t width_ms) {
+    snprintf(stub_drive_call, sizeof(stub_drive_call), "pulse %c %u %d %u", port, pin, level,
+             (unsigned)width_ms);
+    return stub_drive_rc;
+}
+
+int drive_bounce(char port, uint8_t pin, uint32_t count, uint32_t interval_us, int final_level) {
+    snprintf(stub_drive_call, sizeof(stub_drive_call), "bounce %c %u %u %u %d", port, pin,
+             (unsigned)count, (unsigned)interval_us, final_level);
+    return stub_drive_rc;
+}
 
 /* trace.c is Zephyr + GPIO interrupts; this stand-in returns canned edge lists. */
 static struct trace_raw stub_trace;
@@ -358,6 +380,61 @@ int main(void) {
         break;
     }
     freq("trace_unknown", "TRACE D99 100");
+
+    
+    /* DRIVE HIGH on every pin of the table */
+    for (size_t i = 0; i < PINS_COUNT; i++) {
+        char line[64], tag[80];
+        stub_drive_rc = DRIVE_OK;
+        snprintf(line, sizeof(line), "DRIVE %s HIGH", PINS[i].name);
+        snprintf(tag, sizeof(tag), "drivepin\t%s", PINS[i].name);
+        current = tag;
+        cmd_handle(line, out);
+    }
+
+    /* DRIVE details, on the first wired drive pin (if the map has one). Each case prints
+       the reply, then the call the firmware made ("-" = none) */
+    for (size_t i = 0; i < PINS_COUNT; i++) {
+        static const char *const cases[][3] = {
+            /* name, arguments after the pin, rc of the stub */
+            {"drive_high", "HIGH", "0"},
+            {"drive_low", "LOW", "0"},
+            {"drive_release", "RELEASE", "0"},
+            {"drive_pulse", "PULSE 50 LOW", "0"},
+            {"drive_bounce", "BOUNCE 5 200 LOW", "0"},
+            {"drive_bounce_max", "BOUNCE 100 100000 HIGH", "0"},
+            {"drive_badlevel", "MAYBE", "0"},
+            {"drive_lowercase", "high", "0"},
+            {"drive_pulse_release", "PULSE 50 RELEASE", "0"},
+            {"drive_pulse_w0", "PULSE 0 LOW", "0"},
+            {"drive_pulse_wbig", "PULSE 10001 LOW", "0"},
+            {"drive_pulse_args", "PULSE 50", "0"},
+            {"drive_bounce_c0", "BOUNCE 0 200 LOW", "0"},
+            {"drive_bounce_cbig", "BOUNCE 101 200 LOW", "0"},
+            {"drive_bounce_i9", "BOUNCE 5 9 LOW", "0"},
+            {"drive_bounce_ibig", "BOUNCE 5 100001 LOW", "0"},
+            {"drive_bounce_args", "BOUNCE 5 200", "0"},
+            {"drive_extra", "HIGH NOW", "0"},
+            {"drive_noport", "HIGH", "-1"},
+            {"drive_hw", "BOUNCE 5 200 LOW", "-2"},
+        };
+        if (PINS[i].port == 0 || !(PINS[i].caps & CAP_DRIVE)) {
+            continue;
+        }
+        current = "drive_pin";
+        out(PINS[i].name);
+        for (size_t k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+            char req[96];
+            snprintf(req, sizeof(req), "DRIVE %s %s", PINS[i].name, cases[k][1]);
+            stub_drive_rc = cases[k][2][0] == '-' ? -(cases[k][2][1] - '0') : 0;
+            strcpy(stub_drive_call, "-");
+            freq(cases[k][0], req);
+            printf("%s_call\t%s\n", cases[k][0], stub_drive_call);
+        }
+        break;
+    }
+    freq("drive_unknown", "DRIVE D99 HIGH");
+    freq("drive_noargs", "DRIVE D2");
 
     /* the generated pin table */
     current = "pins";

@@ -19,4 +19,15 @@ uint32_t tb_now(void);
 // Tick rate in Hz (0 until tb_init succeeds).
 uint32_t tb_hz(void);
 
+
+// Microseconds -> timebase ticks (us up to ~53 s).
+uint32_t tb_us_to_ticks(uint32_t us);
+
+// Block the calling thread until tb_now() reaches deadline (a tick value from tb_now()
+// plus an offset, at most ~26 s ahead). It sleeps while the deadline is far away, so other
+// threads and interrupts keep running, then busy-waits the last stretch, so it returns
+// within a fraction of a microsecond of the deadline instead of on a 100 us kernel tick.
+// Thread context only.
+void tb_wait_until(uint32_t deadline);
+
 #endif

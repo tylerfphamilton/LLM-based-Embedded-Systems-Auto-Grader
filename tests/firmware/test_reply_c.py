@@ -24,6 +24,9 @@ ROOT = Path(__file__).resolve().parents[2]
 FW = ROOT / "firmware" / "src"
 LINE_MAX = 1024
 
+# harness rows "<kind>\t<pin>\t<reply>": one command run on every pin of the table
+PER_PIN_CASES = ("freqpin", "tracepin", "drivepin")
+
 COMPILER = next((c for c in ("cc", "gcc", "clang") if shutil.which(c)), None)
 pytestmark = pytest.mark.skipif(
     COMPILER is None, reason="no C compiler (cc, gcc or clang) on PATH; firmware C not tested"
@@ -59,7 +62,7 @@ def output(tmp_path_factory) -> tuple[dict[str, str], list[str]]:
         if name == "pin":
             pins.append(line)
         else:
-            if name in ("freqpin", "tracepin"):  # "<kind>\t<pin>\t<reply>" -> "<kind>:<pin>"
+            if name in PER_PIN_CASES:  # "<kind>\t<pin>\t<reply>" -> "<kind>:<pin>"
                 pin, _, line = line.partition("\t")
                 name = f"{name}:{pin}"
             assert name not in cases, name
@@ -354,3 +357,82 @@ def test_trace_errors(trace_cases) -> None:
     assert trace_cases["trace_win0"] == bad_window
     assert trace_cases["trace_winbig"] == bad_window
     assert trace_cases["trace_args"] == "ERR BADCMD TRACE takes 2 arguments, got 1"
+
+
+# --------------------------------------------------------------------------- DRIVE
+
+
+def test_drive_checks_every_pin_against_the_pin_map(output, pinmap) -> None:
+    """DRIVE runs only on wired pins with the drive capability (never RST, never inputs)."""
+    for name, info in pinmap.pins.items():
+        line = output[0][f"drivepin:{name}"]
+        if "drive" not in info.caps:
+            want = Err("BADPIN", f"pin {name} has no drive capability")
+            assert line == format_response(want), name
+        elif not _wired(info.stm32):
+            want = Err("BADPIN", f"pin {name} is not wired (TBD in the pin map)")
+            assert line == format_response(want), name
+        else:
+            assert line == ok(), name
+    assert output[0]["drive_unknown"] == format_response(
+        Err("BADPIN", "pin D99 is not in the pin map")
+    )
+    assert output[0]["drive_noargs"] == "ERR BADCMD DRIVE takes 2-5 arguments, got 1"
+
+
+@pytest.fixture
+def drive_cases(output, pinmap) -> dict[str, str]:
+    cases = output[0]
+    if "drive_pin" not in cases:
+        pytest.skip("no wired drive pin in config/pinmap.yaml")
+    m = _wired(pinmap.pins[cases["drive_pin"]].stm32)
+    assert m
+    cases = dict(cases)
+    cases["_stm32"] = f"{m.group(1)} {int(m.group(2))}"
+    return cases
+
+
+def test_drive_actions_reach_the_mapped_stm32_pin(drive_cases) -> None:
+    pin = drive_cases["_stm32"]  # e.g. "A 8"
+    calls = {
+        "drive_high": f"set {pin} 1",
+        "drive_low": f"set {pin} 0",
+        "drive_release": f"set {pin} 2",
+        "drive_pulse": f"pulse {pin} 0 50",
+        "drive_bounce": f"bounce {pin} 5 200 0",
+        "drive_bounce_max": f"bounce {pin} 100 100000 1",
+    }
+    for case, call in calls.items():
+        assert drive_cases[case] == ok(), case
+        assert drive_cases[f"{case}_call"] == call, case
+
+
+def test_drive_rejects_bad_arguments_without_driving(drive_cases) -> None:
+    errors = {
+        "drive_badlevel": Err("BADARG", "level must be HIGH, LOW or RELEASE"),
+        "drive_lowercase": Err("BADARG", "level must be HIGH, LOW or RELEASE"),
+        "drive_pulse_release": Err("BADARG", "level must be HIGH or LOW"),
+        "drive_pulse_w0": Err("BADARG", "width_ms must be 1-10000"),
+        "drive_pulse_wbig": Err("BADARG", "width_ms must be 1-10000"),
+        "drive_pulse_args": Err("BADCMD", "usage: DRIVE <pin> PULSE <width_ms> HIGH|LOW"),
+        "drive_bounce_c0": Err("BADARG", "count must be 1-100"),
+        "drive_bounce_cbig": Err("BADARG", "count must be 1-100"),
+        "drive_bounce_i9": Err("BADARG", "interval_us must be 10-100000"),
+        "drive_bounce_ibig": Err("BADARG", "interval_us must be 10-100000"),
+        "drive_bounce_args": Err(
+            "BADCMD", "usage: DRIVE <pin> BOUNCE <count> <interval_us> HIGH|LOW"
+        ),
+        "drive_extra": Err("BADCMD", "usage: DRIVE <pin> HIGH|LOW|RELEASE"),
+    }
+    for case, err in errors.items():
+        assert drive_cases[case] == format_response(err), case
+        assert drive_cases[f"{case}_call"] == "-", case  # the pin was never touched
+
+
+def test_drive_hardware_errors(drive_cases) -> None:
+    pin_name = drive_cases["drive_pin"]
+    port, num = drive_cases["_stm32"].split()
+    noport = Err("INTERNAL", f"no GPIO port {port} (pin {pin_name})")
+    assert drive_cases["drive_noport"] == format_response(noport)
+    hw = Err("INTERNAL", f"could not drive P{port}{num}")
+    assert drive_cases["drive_hw"] == format_response(hw)
