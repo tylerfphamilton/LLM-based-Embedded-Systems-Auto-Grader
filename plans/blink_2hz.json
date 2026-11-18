@@ -2,7 +2,7 @@
   "schema_version": "0.1",
   "assignment": "blink_2hz",
   "description": "Blink the on-board LED (D13) at 2 Hz: 250 ms on, 250 ms off.",
-  "setup": { "reset": true, "boot_wait_ms": 500 },
+  "setup": { "reset": true, "boot_wait_ms": 1000 },
   "steps": [
     {
       "op": "measure",
