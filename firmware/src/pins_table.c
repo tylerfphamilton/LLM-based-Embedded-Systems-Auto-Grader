@@ -27,6 +27,9 @@ bool pins_can_capture(const struct pin_def* p){
     return p != NULL && (p->caps & CAP_TIMER_CAPTURE) != 0;
 }
 
+bool pins_is_gpio(const struct pin_def* p){
+    return p != NULL && (p->caps & CAP_GPIO) != 0;
+}
 
 const struct pin_def* pins_reset_line(void){
 

@@ -7,6 +7,7 @@
 #include "pins.h"
 #include "reply.h"
 #include "rig.h"
+#include "trace.h"
 #include "version.h"
 
 // most tokens a request can have (including the verb)
@@ -198,6 +199,71 @@ static void cmd_reset(const struct args *a, reply_fn reply){
     reply_send(&r, reply);
 }
 
+// TRACE <pin> <window_ms>: every edge on <pin> during the window.
+//   edge_count  = edges seen (rising and falling)
+//   final_level = pin level at the end of the window (0/1)
+//   edges_ms    = time of each edge from the start of the window, in ms (us resolution)
+// If the list doesn't fit in one reply line, or more edges came than the firmware stores,
+// the list is cut short and the reply says truncated=1; edge_count is still the full count.
+static struct trace_raw trace_buf;            // ~1 KB: kept off the stack
+static int64_t trace_us[TRACE_MAX_EDGES];     // edge times in us (= ms with 3 decimals)
+
+static void cmd_trace(const struct args *a, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    const char* name = a->argv[1];
+    const struct pin_def* p = pins_find(name);
+    uint32_t window_ms;
+    struct reply_buf r;
+
+    if (p == NULL){
+        snprintf(msg, sizeof(msg), "pin %.16s is not in the pin map", name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (!pins_is_gpio(p)){
+        snprintf(msg, sizeof(msg), "pin %.16s has no gpio capability", name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (!pins_wired(p)){
+        snprintf(msg, sizeof(msg), "pin %.16s is not wired (TBD in the pin map)", name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (!parse_u32(a->argv[2], 10000, &window_ms) || window_ms < 1){
+        reply_err(reply, "BADARG", "window_ms must be 1-10000");
+        return;
+    }
+
+    int rc = trace_measure(p->port, p->pin, window_ms, &trace_buf);
+    if (rc == TRACE_NO_PORT){
+        snprintf(msg, sizeof(msg), "no GPIO port %c (pin %.16s)", p->port, name);
+        reply_err(reply, "INTERNAL", msg);
+        return;
+    }
+    if (rc != TRACE_OK || trace_buf.clock_hz == 0){
+        snprintf(msg, sizeof(msg), "edge capture setup failed on P%c%u", p->port, (unsigned)p->pin);
+        reply_err(reply, "INTERNAL", msg);
+        return;
+    }
+
+    // ticks since the window start -> us (unsigned subtraction handles counter wrap)
+    for (uint32_t i = 0; i < trace_buf.stored; i++){
+        uint64_t ticks = (uint32_t)(trace_buf.t[i] - trace_buf.start);
+        trace_us[i] = (int64_t)div_round(ticks * 1000000u, trace_buf.clock_hz);
+    }
+
+    reply_begin(&r);
+    reply_int(&r, "edge_count", trace_buf.edge_count);
+    reply_int(&r, "final_level", trace_buf.final_level);
+    reply_list_fixed(&r, "edges_ms", trace_us, trace_buf.stored, 3);
+    if (trace_buf.stored < trace_buf.edge_count && !r.truncated){
+        reply_int(&r, "truncated", 1);   // the firmware's edge buffer filled up
+    }
+    reply_send(&r, reply);
+}
+
 // Command Table
 // Need to add drive, ... here as they are implemented
 static const struct command commands[] = {
@@ -205,6 +271,7 @@ static const struct command commands[] = {
     {"FREQ", 2, 2, cmd_freq},
     {"WAIT", 1, 1, cmd_wait},
     {"RESET", 0, 0, cmd_reset},
+    {"TRACE", 2, 2, cmd_trace},
 };
 
 

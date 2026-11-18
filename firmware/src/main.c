@@ -4,6 +4,7 @@
 
 #include "cmd.h"
 #include "link.h"
+#include "timebase.h"
 #include "version.h"
 
 // buffer for the request currently being handled
@@ -16,6 +17,12 @@ int main(void){
 
         // No host link, so there is nobody to report to (come back here)
         k_panic();
+    }
+
+    // start the shared timebase (TIM5) now, so every later timestamp uses the same clock.
+    // If it fails, commands that need it (TRACE, ...) report the error themselves.
+    if (tb_init() != 0){
+        link_send_line("# timebase init failed");
     }
 
     // startup message

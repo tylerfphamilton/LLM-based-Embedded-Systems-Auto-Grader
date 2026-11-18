@@ -15,6 +15,39 @@
 #include "pins_gen.h"
 #include "reply.h"
 #include "rig.h"
+#include "trace.h"
+
+
+/* trace.c is Zephyr + GPIO interrupts; this stand-in returns canned edge lists. */
+static struct trace_raw stub_trace;
+static int stub_trace_rc;
+static char stub_trace_port;
+static unsigned stub_trace_pin, stub_trace_window;
+
+int trace_measure(char port, uint8_t pin, uint32_t window_ms, struct trace_raw *out) {
+    stub_trace_port = port;
+    stub_trace_pin = pin;
+    stub_trace_window = window_ms;
+    *out = stub_trace;
+    return stub_trace_rc;
+}
+
+/* n edges, the first `first_us` after the window start, then every `step_us`; only the
+   first `keep` are stored (as when the firmware's buffer fills up) */
+static void stub_edges(uint32_t n, uint32_t keep, uint32_t first_us, uint32_t step_us,
+                       uint8_t final_level) {
+    const uint32_t hz = 80000000u;
+    stub_trace_rc = TRACE_OK;
+    stub_trace.clock_hz = hz;
+    stub_trace.start = 4290000000u; /* just before the 32-bit wrap: spans must not care */
+    stub_trace.edge_count = n;
+    stub_trace.stored = keep < n ? keep : n;
+    for (uint32_t i = 0; i < stub_trace.stored; i++) {
+        uint64_t us = (uint64_t)first_us + (uint64_t)i * step_us;
+        stub_trace.t[i] = stub_trace.start + (uint32_t)(us * (hz / 1000000u));
+    }
+    stub_trace.final_level = final_level;
+}
 
 /* rig.c is Zephyr + GPIO; these stand-ins record what the firmware asked for. */
 static long stub_slept_ms = -1;
@@ -272,6 +305,59 @@ int main(void) {
     stub_reset_rc = 0;
     freq("reset_args", "RESET now");
     printf("reset_args_pulse\t%d\n", stub_resets);
+
+    
+    /* TRACE on every pin of the table, with a 2 Hz blink behind the stub */
+    for (size_t i = 0; i < PINS_COUNT; i++) {
+        char line[64], tag[80];
+        stub_edges(8, TRACE_MAX_EDGES, 100000, 250000, 1);
+        snprintf(line, sizeof(line), "TRACE %s 2000", PINS[i].name);
+        snprintf(tag, sizeof(tag), "tracepin\t%s", PINS[i].name);
+        current = tag;
+        cmd_handle(line, out);
+    }
+
+    /* TRACE details, on the first wired gpio pin (if the map has one) */
+    for (size_t i = 0; i < PINS_COUNT; i++) {
+        char req[64];
+        if (PINS[i].port == 0 || !(PINS[i].caps & CAP_GPIO)) {
+            continue;
+        }
+        current = "trace_pin";
+        out(PINS[i].name);
+        snprintf(req, sizeof(req), "TRACE %s 2000", PINS[i].name);
+
+        stub_edges(8, TRACE_MAX_EDGES, 100000, 250000, 1); /* 2 Hz blink: 100, 350 ... 1850 ms */
+        freq("trace_blink", req);
+        printf("trace_call\t%c %u %u\n", stub_trace_port, stub_trace_pin, stub_trace_window);
+
+        stub_edges(0, TRACE_MAX_EDGES, 0, 0, 0); /* steady low */
+        freq("trace_low", req);
+        stub_edges(0, TRACE_MAX_EDGES, 0, 0, 1); /* steady high */
+        freq("trace_high", req);
+        stub_edges(3, TRACE_MAX_EDGES, 1, 1234567, 0); /* sub-ms values: 0.001, 1234.568 ... */
+        freq("trace_fine", req);
+        stub_edges(300, TRACE_MAX_EDGES, 1000, 1000, 0); /* too many to fit one line */
+        freq("trace_long", req);
+        stub_edges(50, 40, 1000, 1000, 0); /* buffer full but the list fits the line */
+        freq("trace_bufull", req);
+
+        stub_edges(8, TRACE_MAX_EDGES, 100000, 250000, 1);
+        stub_trace_rc = TRACE_NO_PORT;
+        freq("trace_noport", req);
+        stub_trace_rc = TRACE_HW;
+        freq("trace_hw", req);
+
+        stub_edges(8, TRACE_MAX_EDGES, 100000, 250000, 1);
+        snprintf(req, sizeof(req), "TRACE %s 0", PINS[i].name);
+        freq("trace_win0", req);
+        snprintf(req, sizeof(req), "TRACE %s 10001", PINS[i].name);
+        freq("trace_winbig", req);
+        snprintf(req, sizeof(req), "TRACE %s", PINS[i].name);
+        freq("trace_args", req);
+        break;
+    }
+    freq("trace_unknown", "TRACE D99 100");
 
     /* the generated pin table */
     current = "pins";

@@ -59,9 +59,9 @@ def output(tmp_path_factory) -> tuple[dict[str, str], list[str]]:
         if name == "pin":
             pins.append(line)
         else:
-            if name == "freqpin":  # "freqpin\t<pin>\t<reply>" -> case "freqpin:<pin>"
+            if name in ("freqpin", "tracepin"):  # "<kind>\t<pin>\t<reply>" -> "<kind>:<pin>"
                 pin, _, line = line.partition("\t")
-                name = f"freqpin:{pin}"
+                name = f"{name}:{pin}"
             assert name not in cases, name
             cases[name] = line
     return cases, pins
@@ -222,7 +222,6 @@ def test_freq_argument_checks(freq_cases) -> None:
     assert freq_cases["freq_args"] == "ERR BADCMD FREQ takes 2 arguments, got 1"
 
 
-
 # --------------------------------------------------------------------------- WAIT
 
 
@@ -242,8 +241,6 @@ def test_wait_rejects_bad_arguments_without_sleeping(output) -> None:
     assert cases["wait_extra"] == "ERR BADCMD WAIT takes 1 arguments, got 2"
     for case in ("wait_big", "wait_neg", "wait_frac", "wait_args", "wait_extra"):
         assert cases[f"{case}_slept"] == "-1", case  # never slept
-
-
 
 
 # --------------------------------------------------------------------------- RESET
@@ -280,3 +277,80 @@ def test_reset_errors(output, pinmap) -> None:
         assert cases["reset_hw"] == format_response(want)
     assert cases["reset_args"] == "ERR BADCMD RESET takes 0 arguments, got 1"
     assert cases["reset_args_pulse"] == "0"  # a rejected RESET must not touch the line
+
+
+# --------------------------------------------------------------------------- TRACE
+
+
+def test_trace_checks_every_pin_against_the_pin_map(output, pinmap) -> None:
+    """TRACE runs only on wired gpio pins; every other pin is a BADPIN rig fault."""
+    blink = ok(
+        edge_count=8,
+        final_level=1,
+        edges_ms=[100.0 + 250.0 * i for i in range(8)],
+    )
+    for name, info in pinmap.pins.items():
+        line = output[0][f"tracepin:{name}"]
+        if "gpio" not in info.caps:
+            want = Err("BADPIN", f"pin {name} has no gpio capability")
+            assert line == format_response(want), name
+        elif not _wired(info.stm32):
+            want = Err("BADPIN", f"pin {name} is not wired (TBD in the pin map)")
+            assert line == format_response(want), name
+        else:
+            assert line == blink, name
+    unknown = Err("BADPIN", "pin D99 is not in the pin map")
+    assert output[0]["trace_unknown"] == format_response(unknown)
+
+
+@pytest.fixture
+def trace_cases(output, pinmap) -> dict[str, str]:
+    cases = output[0]
+    if "trace_pin" not in cases:
+        pytest.skip("no wired gpio pin in config/pinmap.yaml")
+    m = _wired(pinmap.pins[cases["trace_pin"]].stm32)
+    assert m
+    cases = dict(cases)
+    cases["_stm32"] = f"{m.group(1)} {int(m.group(2))}"
+    return cases
+
+
+def test_trace_measures_through_the_mapped_stm32_pin(trace_cases) -> None:
+    assert trace_cases["trace_call"] == f"{trace_cases['_stm32']} 2000"
+
+
+def test_trace_edges_and_levels(trace_cases) -> None:
+    blink = [100.0 + 250.0 * i for i in range(8)]
+    assert trace_cases["trace_blink"] == ok(edge_count=8, final_level=1, edges_ms=blink)
+    assert trace_cases["trace_low"] == ok(edge_count=0, final_level=0, edges_ms=[])
+    assert trace_cases["trace_high"] == ok(edge_count=0, final_level=1, edges_ms=[])
+    # microsecond resolution, measured from the window start across the counter wrap
+    fine = [0.001, 1234.568, 2469.135]
+    assert trace_cases["trace_fine"] == ok(edge_count=3, final_level=0, edges_ms=fine)
+
+
+def test_trace_long_lists_are_truncated_but_counted(trace_cases) -> None:
+    line = trace_cases["trace_long"]
+    edges = parse_response(line).fields["edges_ms"]  # type: ignore[union-attr]
+    kept = len(edges)
+    assert 0 < kept < 300
+    want = [float(i + 1) for i in range(kept)]
+    assert line == ok(edge_count=300, final_level=0, edges_ms=want, truncated=1)
+    assert len(line) <= LINE_MAX
+    # the firmware's buffer filled (40 of 50 stored) but the list fits: still truncated=1
+    stored = [float(i + 1) for i in range(40)]
+    want_full = ok(edge_count=50, final_level=0, edges_ms=stored, truncated=1)
+    assert trace_cases["trace_bufull"] == want_full
+
+
+def test_trace_errors(trace_cases) -> None:
+    pin = trace_cases["trace_pin"]
+    port, num = trace_cases["_stm32"].split()
+    noport = Err("INTERNAL", f"no GPIO port {port} (pin {pin})")
+    assert trace_cases["trace_noport"] == format_response(noport)
+    hw = Err("INTERNAL", f"edge capture setup failed on P{port}{num}")
+    assert trace_cases["trace_hw"] == format_response(hw)
+    bad_window = format_response(Err("BADARG", "window_ms must be 1-10000"))
+    assert trace_cases["trace_win0"] == bad_window
+    assert trace_cases["trace_winbig"] == bad_window
+    assert trace_cases["trace_args"] == "ERR BADCMD TRACE takes 2 arguments, got 1"

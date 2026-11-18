@@ -65,7 +65,13 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   changes, the reply is `delay_ms=null to_edge_count=0`. This is a valid measurement; the
   board must **not** reply `ERR TIMEOUT` here. If from_pin never changes, the reply is
   `ERR TIMEOUT …`, because the rig failed to trigger.
-* `TRACE`: `final_level` is `0` or `1`. `edges_ms` is relative to the start of the window.
+* `TRACE`: `edge_count` counts every edge, rising and falling. `final_level` is `0` or `1`.
+  `edges_ms` is relative to the start of the window, with microsecond resolution (3
+  decimals). The firmware stores up to 256 edges and a reply line holds about 90; if the
+  list is cut short for either reason the reply ends with `truncated=1`, and `edge_count`
+  is still the full count. Edges are timestamped in an interrupt from the shared 80 MHz
+  timebase (TIM5), so edges closer together than a few microseconds can be missed. An
+  undriven pin reads 0 (internal pull-down).
 * `UART READ`: receives the raw bytes. Bytes with framing errors are still reported
   (as received) and counted in `framing_errors`.
 * `ARM` / `COLLECT`: several measurements may be armed at once (at least 4 slots).
