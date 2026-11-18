@@ -17,8 +17,42 @@
 #include "pins_gen.h"
 #include "reply.h"
 #include "rig.h"
+#include "student_uart.h"
 #include "trace.h"
 
+
+/* student_uart.c is Zephyr + USART hardware; these stand-ins record the call ("-" if none
+   was made) and return a canned READ result. */
+static struct su_raw stub_uart;
+static int stub_uart_rc;
+static char stub_uart_call[64];
+
+int su_send(char port, uint8_t pin, uint32_t baud, const uint8_t *data, size_t n) {
+    /* "send <port> <pin> <baud> <n> <first 8 bytes in hex>" */
+    int k = snprintf(stub_uart_call, sizeof(stub_uart_call), "send %c %u %u %u ", port, pin,
+                     (unsigned)baud, (unsigned)n);
+    for (size_t i = 0; i < n && i < 8; i++) {
+        k += snprintf(stub_uart_call + k, sizeof(stub_uart_call) - (size_t)k, "%02X", data[i]);
+    }
+    return stub_uart_rc;
+}
+
+int su_read(char port, uint8_t pin, uint32_t baud, uint32_t window_ms, struct su_raw *out) {
+    snprintf(stub_uart_call, sizeof(stub_uart_call), "read %c %u %u %u", port, pin,
+             (unsigned)baud, (unsigned)window_ms);
+    *out = stub_uart;
+    return stub_uart_rc;
+}
+
+/* `n` bytes received, the first `stored` of them kept, `fe` with framing errors */
+static void stub_uart_bytes(const void *bytes, uint32_t n, uint32_t stored, uint32_t fe) {
+    stub_uart_rc = SU_OK;
+    stub_uart.byte_count = n;
+    stub_uart.stored = stored;
+    stub_uart.framing_errors = fe;
+    stub_uart.overruns = 0;
+    memcpy(stub_uart.data, bytes, stored);
+}
 
 /* delay.c is Zephyr + GPIO interrupts; this stand-in records the call ("-" if none was
    made) and returns a canned result. */
@@ -152,6 +186,17 @@ static void freq(const char *name, const char *request) {
     current = name;
     strcpy(line, request);
     cmd_handle(line, out);
+}
+
+
+/* run one UART request (lines up to ~1.1 KB), then print the call ("-" = none) */
+static void uart_case(const char *name, const char *request) {
+    static char line[1200];
+    current = name;
+    strcpy(stub_uart_call, "-");
+    snprintf(line, sizeof(line), "%s", request);
+    cmd_handle(line, out);
+    printf("%s_call\t%s\n", name, stub_uart_call);
 }
 
 #define STR(r, key, s) reply_str((r), (key), (const uint8_t *)(s), sizeof(s) - 1)
@@ -561,6 +606,88 @@ int main(void) {
         }
     }
     freq("delay_unknown_from", "DELAY D99 FALLING D13 ANY 100");
+
+    
+    /* UART READ */
+    {
+        static uint8_t big[SU_RX_MAX];
+        static char req[1200];
+
+        stub_uart_bytes("ON\r\n", 4, 4, 0);
+        uart_case("uart_read_on", "UART 9600 READ 200");
+        stub_uart_bytes("", 0, 0, 0);
+        uart_case("uart_read_empty", "UART 9600 READ 200");
+        stub_uart_bytes("\xff\x00\xf0", 3, 3, 2); /* wrong baud: junk and framing errors */
+        uart_case("uart_read_garbage", "UART 115200 READ 100");
+        stub_uart_bytes("a,b\"c%d e", 9, 9, 0);
+        uart_case("uart_read_escape", "UART 9600 READ 100");
+
+        for (size_t i = 0; i < 1000; i++) { /* more text than a line holds */
+            big[i] = (uint8_t)('A' + i % 26);
+        }
+        stub_uart_bytes(big, 1000, 1000, 0);
+        uart_case("uart_read_long", "UART 9600 READ 1000");
+        memset(big, '\n', 600); /* 3 characters each on the wire */
+        stub_uart_bytes(big, 600, 600, 0);
+        uart_case("uart_read_long_esc", "UART 9600 READ 1000");
+        stub_uart_bytes("ONOFFON", 30, 7, 0); /* the firmware's buffer was full */
+        uart_case("uart_read_bufull", "UART 9600 READ 1000");
+
+        stub_uart_bytes("ON", 2, 2, 0);
+        stub_uart.overruns = 1;
+        uart_case("uart_read_overrun", "UART 9600 READ 100");
+        stub_uart_bytes("ON", 2, 2, 0);
+        stub_uart_rc = SU_NO_USART;
+        uart_case("uart_read_nousart", "UART 9600 READ 100");
+        stub_uart_rc = SU_HW;
+        uart_case("uart_read_hw", "UART 9600 READ 100");
+
+        stub_uart_bytes("ON", 2, 2, 0);
+        uart_case("uart_read_w0", "UART 9600 READ 0");
+        uart_case("uart_read_wbig", "UART 9600 READ 10001");
+        uart_case("uart_read_wsyntax", "UART 9600 READ 1e3");
+
+        /* every standard baud, and some that aren't */
+        static const unsigned bauds[] = {300,  1200,  2400,  4800,   9600,
+                                         19200, 38400, 57600, 115200, 230400};
+        for (size_t i = 0; i < sizeof(bauds) / sizeof(bauds[0]); i++) {
+            char name[32];
+            snprintf(name, sizeof(name), "uart_baud_%u", bauds[i]);
+            snprintf(req, sizeof(req), "UART %u READ 100", bauds[i]);
+            uart_case(name, req);
+        }
+        uart_case("uart_baud_bad", "UART 9601 READ 100");
+        uart_case("uart_baud_zero", "UART 0 READ 100");
+        uart_case("uart_baud_big", "UART 460800 READ 100");
+        uart_case("uart_baud_syntax", "UART 9600.0 READ 100");
+        uart_case("uart_mode_bad", "UART 9600 WRITE 100");
+        uart_case("uart_mode_lower", "UART 9600 read 100");
+        uart_case("uart_args", "UART 9600 READ");
+
+        /* UART SEND */
+        stub_uart_rc = SU_OK;
+        uart_case("uart_send_on", "UART 9600 SEND 4F4E0A");
+        uart_case("uart_send_lower", "UART 115200 SEND 0a0d");
+        uart_case("uart_send_odd", "UART 9600 SEND 4F4");
+        uart_case("uart_send_nothex", "UART 9600 SEND 4G");
+        uart_case("uart_send_0x", "UART 9600 SEND 0x4F");
+
+        int k = snprintf(req, sizeof(req), "UART 9600 SEND ");
+        for (int i = 0; i < 500; i++) { /* the most a request line can carry */
+            k += snprintf(req + k, sizeof(req) - (size_t)k, "%02X", i & 0xFF);
+        }
+        uart_case("uart_send_big", req);
+        k = snprintf(req, sizeof(req), "UART 9600 SEND ");
+        for (int i = 0; i < 513; i++) { /* more than the payload buffer */
+            k += snprintf(req + k, sizeof(req) - (size_t)k, "41");
+        }
+        uart_case("uart_send_toobig", req);
+
+        stub_uart_rc = SU_NO_USART;
+        uart_case("uart_send_nousart", "UART 9600 SEND 4F4E");
+        stub_uart_rc = SU_HW;
+        uart_case("uart_send_hw", "UART 9600 SEND 4F4E");
+    }
 
     /* the generated pin table */
     current = "pins";

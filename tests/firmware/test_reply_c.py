@@ -18,7 +18,16 @@ from typing import Any, get_args
 import pytest
 
 from grader.pinmap import Capability, pinmap_hash
-from grader.protocol import PROTOCOL_VERSION, Err, Ok, format_response, parse_response
+from grader.protocol import (
+    PROTOCOL_VERSION,
+    Err,
+    Ok,
+    UartRead,
+    UartSend,
+    format_response,
+    parse_response,
+)
+from grader.validate import STANDARD_BAUDS
 
 ROOT = Path(__file__).resolve().parents[2]
 FW = ROOT / "firmware" / "src"
@@ -552,3 +561,110 @@ def test_delay_rejects_bad_arguments_without_measuring(delay_cases) -> None:
         assert delay_cases[case] == format_response(err), case
         assert delay_cases[f"{case}_call"] == "-", case
     assert delay_cases["delay_args"] == "ERR BADCMD DELAY takes 5 arguments, got 4"
+
+
+# --------------------------------------------------------------------------- UART
+
+
+def _uart_row(pinmap, cap: str):
+    """The pin the firmware uses: the first row (by name, as in pins_gen.h) with the cap."""
+    for name in sorted(pinmap.pins):
+        if cap in pinmap.pins[name].caps:
+            return name, pinmap.pins[name]
+    return None
+
+
+@pytest.fixture
+def uart_cases(output, pinmap) -> dict[str, str]:
+    cases = dict(output[0])
+    for cap, key in (("uart_rx", "_rx"), ("uart_tx", "_tx")):
+        row = _uart_row(pinmap, cap)
+        m = _wired(row[1].stm32) if row else None
+        if row is None or m is None:
+            pytest.skip(f"pin map has no wired {cap} pin")
+        cases[key] = f"{m.group(1)} {int(m.group(2))}"
+        cases[f"{key}_name"] = row[0]
+        cases[f"{key}_stm32"] = f"P{m.group(1)}{int(m.group(2))}"
+    return cases
+
+
+def test_uart_requests_match_the_host(uart_cases) -> None:
+    """The harness sends what grader.protocol sends for the same plan steps."""
+    assert UartRead(9600, 200).to_line() == "UART 9600 READ 200"
+    assert UartSend(9600, b"ON\n").to_line() == "UART 9600 SEND 4F4E0A"
+    assert uart_cases["uart_read_on_call"] == f"read {uart_cases['_rx']} 9600 200"
+    assert uart_cases["uart_send_on_call"] == f"send {uart_cases['_tx']} 9600 3 4F4E0A"
+
+
+def test_uart_read_returns_the_raw_bytes(uart_cases) -> None:
+    assert uart_cases["uart_read_on"] == ok(text=b"ON\r\n", byte_count=4, framing_errors=0)
+    assert uart_cases["uart_read_empty"] == ok(text=b"", byte_count=0, framing_errors=0)
+    # a wrong baud gives junk bytes and framing errors: still a measurement, not an error
+    junk = ok(text=b"\xff\x00\xf0", byte_count=3, framing_errors=2)
+    assert uart_cases["uart_read_garbage"] == junk
+    assert uart_cases["uart_read_escape"] == ok(text=b'a,b"c%d e', byte_count=9, framing_errors=0)
+
+
+def test_uart_long_text_is_truncated_but_counted(uart_cases) -> None:
+    for case, total, byte in (("uart_read_long", 1000, None), ("uart_read_long_esc", 600, b"\n")):
+        line = uart_cases[case]
+        kept = len(parse_response(line).fields["text"])  # type: ignore[union-attr]
+        assert len(line) <= LINE_MAX, case
+        assert kept < total, case
+        assert len(line) > LINE_MAX - 100, case  # most of the line is used
+        data = bytes(65 + i % 26 for i in range(kept)) if byte is None else byte * kept
+        want = ok(text=data, truncated=1, byte_count=total, framing_errors=0)
+        assert line == want, case
+    full = ok(text=b"ONOFFON", truncated=1, byte_count=30, framing_errors=0)
+    assert uart_cases["uart_read_bufull"] == full
+
+
+def test_uart_accepts_exactly_the_standard_bauds(uart_cases) -> None:
+    for baud in STANDARD_BAUDS:
+        assert uart_cases[f"uart_baud_{baud}"] == ok(text=b"ON", byte_count=2, framing_errors=0)
+        assert uart_cases[f"uart_baud_{baud}_call"] == f"read {uart_cases['_rx']} {baud} 100"
+    bad = format_response(
+        Err(
+            "BADARG",
+            "baud must be 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200 or 230400",
+        )
+    )
+    for case in ("uart_baud_bad", "uart_baud_zero", "uart_baud_big", "uart_baud_syntax"):
+        assert uart_cases[case] == bad, case
+        assert uart_cases[f"{case}_call"] == "-", case
+
+
+def test_uart_send(uart_cases) -> None:
+    tx = uart_cases["_tx"]
+    assert uart_cases["uart_send_on"] == ok()
+    assert uart_cases["uart_send_lower"] == ok()
+    assert uart_cases["uart_send_lower_call"] == f"send {tx} 115200 2 0A0D"
+    assert uart_cases["uart_send_big"] == ok()
+    assert uart_cases["uart_send_big_call"] == f"send {tx} 9600 500 0001020304050607"
+    bad = format_response(Err("BADARG", "payload must be hex bytes, e.g. 48690A"))
+    for case in ("uart_send_odd", "uart_send_nothex", "uart_send_0x", "uart_send_toobig"):
+        assert uart_cases[case] == bad, case
+        assert uart_cases[f"{case}_call"] == "-", case
+
+
+def test_uart_argument_checks(uart_cases) -> None:
+    window = format_response(Err("BADARG", "window_ms must be 1-10000"))
+    for case in ("uart_read_w0", "uart_read_wbig", "uart_read_wsyntax"):
+        assert uart_cases[case] == window, case
+        assert uart_cases[f"{case}_call"] == "-", case
+    mode = format_response(Err("BADARG", "mode must be SEND or READ"))
+    assert uart_cases["uart_mode_bad"] == mode
+    assert uart_cases["uart_mode_lower"] == mode
+    assert uart_cases["uart_args"] == "ERR BADCMD UART takes 3 arguments, got 2"
+
+
+def test_uart_rig_problems_are_errors(uart_cases) -> None:
+    overrun = "uart overrun: bytes arrived faster than the board read them"
+    assert uart_cases["uart_read_overrun"] == format_response(Err("INTERNAL", overrun))
+    hw = format_response(Err("INTERNAL", "student UART setup failed"))
+    assert uart_cases["uart_read_hw"] == hw
+    assert uart_cases["uart_send_hw"] == hw
+    for case, key in (("uart_read_nousart", "_rx"), ("uart_send_nousart", "_tx")):
+        stm32, name = uart_cases[f"{key}_stm32"], uart_cases[f"{key}_name"]
+        want = Err("BADPIN", f"no USART1 on {stm32} (pin {name})")
+        assert uart_cases[case] == format_response(want), case

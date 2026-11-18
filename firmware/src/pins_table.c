@@ -44,3 +44,23 @@ const struct pin_def* pins_reset_line(void){
     }
     return NULL;
 }
+
+
+// first row with the capability, or NULL
+static const struct pin_def* first_with(uint32_t cap){
+
+    for (size_t i = 0; i < PINS_COUNT; i++){
+        if (PINS[i].caps & cap){
+            return &PINS[i];
+        }
+    }
+    return NULL;
+}
+
+const struct pin_def* pins_uart_rx_line(void){
+    return first_with(CAP_UART_RX);
+}
+
+const struct pin_def* pins_uart_tx_line(void){
+    return first_with(CAP_UART_TX);
+}

@@ -49,8 +49,6 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
 | `ARM <measurement request>` | Start a measurement in the background and reply at once | `slot` |
 | `COLLECT <slot>` | Block until that armed measurement finishes, then reply with its normal result | (fields of the armed measurement) |
 
-### Measurement semantics
-
 ### Stimulus semantics
 
 * `DRIVE`: only pins with the `drive` capability (wired through a 1 kΩ series resistor).
@@ -66,6 +64,18 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
     edge; an even count starts at the final level. Changes are scheduled on the TIM5
     timebase (each from the previous deadline, so errors don't add up); an interrupt can
     delay a single change by a few µs.
+* `UART SEND <hex>`: sends the bytes on the pin with the `uart_tx` capability (the
+  student's Serial1 RX, through a 1 kΩ series resistor), 8N1 at the given baud. Replies
+  `OK` once the last stop bit is out. The pin stays a UART output afterwards (idle high).
+  The payload is upper- or lower-case hex, 1–512 bytes (in practice the 1024-byte request
+  line limits it to ~500).
+* Bauds: 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400 (`validate.py`'s
+  list); anything else is `ERR BADARG`. The STM32's USART1 runs from the crystal-locked
+  80 MHz clock, except 300 and 1200 baud, which need the 16 MHz internal oscillator
+  (about ±1%, well inside a UART's tolerance).
+
+### Measurement semantics
+
 * `FREQ`: `edge_count` is the number of **rising** edges in the window (100 for 1 kHz
   over 100 ms). `frequency_hz` = (rising edges − 1) / time from the first to the last
   rising edge; `duty_pct` = average high time / average period, from pulses whose rising
@@ -102,8 +112,15 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   is still the full count. Edges are timestamped in an interrupt from the shared 80 MHz
   timebase (TIM5), so edges closer together than a few microseconds can be missed. An
   undriven pin reads 0 (internal pull-down).
-* `UART READ`: receives the raw bytes. Bytes with framing errors are still reported
-  (as received) and counted in `framing_errors`.
+* `UART READ`: receives the raw bytes on the pin with the `uart_rx` capability (the
+  student's Serial1 TX), 8N1 at the given baud, for `window_ms` (1–10000). Bytes with
+  framing errors are still reported (as received) and counted in `framing_errors`, so a
+  sketch at the wrong baud gives junk text and `framing_errors>0`, not an error. Nothing
+  received is `text="" byte_count=0`. If the text does not fit in the reply line, or more
+  than 1024 bytes arrive, the text keeps its leading bytes and `truncated=1` follows it;
+  `byte_count` is still the full count. The rx pin has the internal pull-up, so an
+  undriven line reads as an idle UART. Bytes lost because the board read too slowly give
+  `ERR INTERNAL uart overrun …` (a rig fault).
 * `ARM` / `COLLECT`: several measurements may be armed at once (at least 4 slots).
   Slots are freed by `COLLECT` and by `RESET`. Typical sequence:
   `ARM DELAY D2 FALLING D13 ANY 100` → `OK slot=0`, `ARM UART 9600 READ 200` →
