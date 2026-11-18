@@ -6,6 +6,7 @@
  * Output: one "<case>\t<reply line>" per case, "pin\t..." per pin-table row and
  * "freqpin\t<name>\t<reply line>" for FREQ on every pin in the table.
  */
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -20,6 +21,14 @@
 #include "student_uart.h"
 #include "trace.h"
 
+/* what the stubs below were asked to do, in order ("delay_start drive uart_finish ..."),
+   so the ARM/COLLECT tests can check that measurements start before the stimulus */
+static char events[512];
+
+static void event(const char *e) {
+    size_t n = strlen(events);
+    snprintf(events + n, sizeof(events) - n, "%s%s", n ? " " : "", e);
+}
 
 /* student_uart.c is Zephyr + USART hardware; these stand-ins record the call ("-" if none
    was made) and return a canned READ result. */
@@ -37,11 +46,21 @@ int su_send(char port, uint8_t pin, uint32_t baud, const uint8_t *data, size_t n
     return stub_uart_rc;
 }
 
-int su_read(char port, uint8_t pin, uint32_t baud, uint32_t window_ms, struct su_raw *out) {
+int su_read_start(char port, uint8_t pin, uint32_t baud, uint32_t window_ms) {
     snprintf(stub_uart_call, sizeof(stub_uart_call), "read %c %u %u %u", port, pin,
              (unsigned)baud, (unsigned)window_ms);
-    *out = stub_uart;
+    event("uart_start");
     return stub_uart_rc;
+}
+
+int su_read_finish(struct su_raw *out) {
+    event("uart_finish");
+    *out = stub_uart;
+    return SU_OK;
+}
+
+void su_read_cancel(void) {
+    event("uart_cancel");
 }
 
 /* `n` bytes received, the first `stored` of them kept, `fe` with framing errors */
@@ -60,13 +79,23 @@ static struct delay_raw stub_delay;
 static int stub_delay_rc;
 static char stub_delay_call[64];
 
-int delay_measure(const struct delay_pin *from, const struct delay_pin *to, uint32_t timeout_ms,
-                  struct delay_raw *out) {
+int delay_start(const struct delay_pin *from, const struct delay_pin *to, uint32_t timeout_ms) {
     snprintf(stub_delay_call, sizeof(stub_delay_call), "%c %u %u %d > %c %u %u %d / %u",
              from->port, from->pin, from->edge, from->keep, to->port, to->pin, to->edge, to->keep,
              (unsigned)timeout_ms);
+    event("delay_start");
+    /* set-up problems show at the start, a missing trigger at the finish */
+    return stub_delay_rc == DELAY_NO_TRIGGER ? DELAY_OK : stub_delay_rc;
+}
+
+int delay_finish(struct delay_raw *out) {
+    event("delay_finish");
     *out = stub_delay;
-    return stub_delay_rc;
+    return stub_delay_rc == DELAY_NO_TRIGGER ? DELAY_NO_TRIGGER : DELAY_OK;
+}
+
+void delay_cancel(void) {
+    event("delay_cancel");
 }
 
 /* the first response `delay_ticks` after the trigger, `count` responses in all */
@@ -84,33 +113,50 @@ static int stub_drive_rc;
 
 int drive_set(char port, uint8_t pin, int level) {
     snprintf(stub_drive_call, sizeof(stub_drive_call), "set %c %u %d", port, pin, level);
+    event("drive");
     return stub_drive_rc;
 }
 
 int drive_pulse(char port, uint8_t pin, int level, uint32_t width_ms) {
     snprintf(stub_drive_call, sizeof(stub_drive_call), "pulse %c %u %d %u", port, pin, level,
              (unsigned)width_ms);
+    event("drive");
     return stub_drive_rc;
 }
 
 int drive_bounce(char port, uint8_t pin, uint32_t count, uint32_t interval_us, int final_level) {
     snprintf(stub_drive_call, sizeof(stub_drive_call), "bounce %c %u %u %u %d", port, pin,
              (unsigned)count, (unsigned)interval_us, final_level);
+    event("drive");
     return stub_drive_rc;
 }
 
 /* trace.c is Zephyr + GPIO interrupts; this stand-in returns canned edge lists. */
 static struct trace_raw stub_trace;
+static struct trace_raw *stub_trace_out;
 static int stub_trace_rc;
 static char stub_trace_port;
 static unsigned stub_trace_pin, stub_trace_window;
+static int stub_trace_keep = -1;
 
-int trace_measure(char port, uint8_t pin, uint32_t window_ms, struct trace_raw *out) {
+int trace_start(char port, uint8_t pin, bool keep, uint32_t window_ms, struct trace_raw *out) {
     stub_trace_port = port;
     stub_trace_pin = pin;
     stub_trace_window = window_ms;
-    *out = stub_trace;
+    stub_trace_keep = keep;
+    stub_trace_out = out;
+    event("trace_start");
     return stub_trace_rc;
+}
+
+int trace_finish(void) {
+    event("trace_finish");
+    *stub_trace_out = stub_trace;
+    return TRACE_OK;
+}
+
+void trace_cancel(void) {
+    event("trace_cancel");
 }
 
 /* n edges, the first `first_us` after the window start, then every `step_us`; only the
@@ -154,12 +200,22 @@ static int stub_rc;
 static char stub_port;
 static unsigned stub_pin, stub_window;
 
-int capture_measure(char port, uint8_t pin, uint32_t window_ms, struct capture_raw *out) {
+int capture_start(char port, uint8_t pin, uint32_t window_ms) {
     stub_port = port;
     stub_pin = pin;
     stub_window = window_ms;
-    *out = stub_raw;
+    event("freq_start");
     return stub_rc;
+}
+
+int capture_finish(struct capture_raw *out) {
+    event("freq_finish");
+    *out = stub_raw;
+    return CAPTURE_OK;
+}
+
+void capture_cancel(void) {
+    event("freq_cancel");
 }
 
 /* a periodic signal: n rising edges, `period` ticks apart, high for `high` ticks */
@@ -687,6 +743,123 @@ int main(void) {
         uart_case("uart_send_nousart", "UART 9600 SEND 4F4E");
         stub_uart_rc = SU_HW;
         uart_case("uart_send_hw", "UART 9600 SEND 4F4E");
+    }
+
+    /* ARM / COLLECT. Pins: the first two wired timer_capture pins and the first wired
+       drive pin */
+    {
+        const char *cap1 = NULL, *cap2 = NULL, *drv = NULL;
+        for (size_t i = 0; i < PINS_COUNT; i++) {
+            if (PINS[i].port == 0) {
+                continue;
+            }
+            if (PINS[i].caps & CAP_TIMER_CAPTURE) {
+                if (cap1 == NULL) {
+                    cap1 = PINS[i].name;
+                }
+                else if (cap2 == NULL) {
+                    cap2 = PINS[i].name;
+                }
+            }
+            if (drv == NULL && (PINS[i].caps & CAP_DRIVE) && (PINS[i].caps & CAP_GPIO)) {
+                drv = PINS[i].name;
+            }
+        }
+        if (cap1 != NULL && cap2 != NULL && drv != NULL) {
+            char req[96];
+            printf("arm_pins\t%s %s %s\n", cap1, cap2, drv);
+
+            /* TRACE leaves a pin the board drives alone, so it can watch the board's DRIVE */
+            stub_edges(8, TRACE_MAX_EDGES, 100000, 250000, 1);
+            snprintf(req, sizeof(req), "TRACE %s 100", drv);
+            freq("trace_drv", req);
+            printf("trace_drv_keep\t%d\n", stub_trace_keep);
+            snprintf(req, sizeof(req), "TRACE %s 100", cap1);
+            freq("trace_in", req);
+            printf("trace_in_keep\t%d\n", stub_trace_keep);
+
+            /* the button sequence: arm DELAY and UART READ, press, collect both */
+            events[0] = '\0';
+            stub_delay_result(260000, 1); /* 3.25 ms */
+            stub_uart_bytes("ON\r\n", 4, 4, 0);
+            stub_drive_rc = DRIVE_OK;
+            snprintf(req, sizeof(req), "ARM DELAY %s FALLING %s ANY 100", drv, cap1);
+            freq("arm_delay", req);
+            freq("arm_uart", "ARM UART 9600 READ 200");
+            snprintf(req, sizeof(req), "DRIVE %s BOUNCE 5 200 LOW", drv);
+            freq("arm_press", req);
+            freq("collect_delay", "COLLECT 0");
+            freq("collect_uart", "COLLECT 1");
+            printf("arm_button_events\t%s\n", events);
+            printf("arm_button_delay_call\t%s\n", stub_delay_call);
+
+            /* a collected slot is free again */
+            stub_signal(80000000u, 100, 80000, 20000);
+            snprintf(req, sizeof(req), "ARM FREQ %s 100", cap1);
+            freq("arm_freq", req);
+            freq("collect_freq", "COLLECT 0");
+            freq("collect_again", "COLLECT 0");
+
+            /* BUSY: a second measurement of the same kind, or on a pin in use */
+            stub_edges(8, TRACE_MAX_EDGES, 100000, 250000, 1);
+            snprintf(req, sizeof(req), "ARM TRACE %s 2000", cap2);
+            freq("arm_trace", req);
+            snprintf(req, sizeof(req), "ARM TRACE %s 100", cap1);
+            freq("busy_kind", req);
+            snprintf(req, sizeof(req), "TRACE %s 100", cap1);
+            freq("busy_kind_now", req);
+            snprintf(req, sizeof(req), "ARM FREQ %s 100", cap2);
+            freq("busy_pin", req);
+            snprintf(req, sizeof(req), "ARM DELAY %s FALLING %s ANY 100", drv, cap2);
+            freq("busy_pin_delay", req);
+            snprintf(req, sizeof(req), "FREQ %s 100", cap1);
+            freq("free_other", req); /* other hardware: runs next to the armed TRACE */
+            freq("collect_trace", "COLLECT 0");
+
+            /* UART SEND while a READ is armed: same baud only */
+            stub_uart_bytes("ON", 2, 2, 0);
+            freq("arm_uart2", "ARM UART 9600 READ 200");
+            uart_case("send_same_baud", "UART 9600 SEND 4F4E");
+            uart_case("send_other_baud", "UART 115200 SEND 4F4E");
+
+            /* RESET stops every armed measurement and frees the slots */
+            snprintf(req, sizeof(req), "ARM TRACE %s 100", cap2);
+            freq("arm_trace2", req);
+            events[0] = '\0';
+            stub_reset_rc = 0;
+            freq("arm_reset", "RESET");
+            printf("arm_reset_events\t%s\n", events);
+            freq("collect_after_reset", "COLLECT 0");
+
+            /* a measurement's own error arrives at COLLECT */
+            stub_delay_result(0, 0);
+            stub_delay_rc = DELAY_NO_TRIGGER;
+            snprintf(req, sizeof(req), "ARM DELAY %s FALLING %s ANY 100", drv, cap1);
+            freq("arm_notrig", req);
+            freq("collect_notrig", "COLLECT 0");
+            stub_delay_rc = DELAY_OK;
+
+            /* ARM errors take no slot */
+            freq("arm_none", "ARM");
+            snprintf(req, sizeof(req), "ARM DRIVE %s HIGH", drv);
+            freq("arm_drive", req);
+            freq("arm_send", "ARM UART 9600 SEND 4F4E");
+            snprintf(req, sizeof(req), "ARM ARM FREQ %s 100", cap1);
+            freq("arm_arm", req);
+            freq("arm_unknown", "ARM JUMP 1");
+            snprintf(req, sizeof(req), "ARM FREQ %s", cap1);
+            freq("arm_arity", req);
+            snprintf(req, sizeof(req), "ARM FREQ %s 0", cap1);
+            freq("arm_badarg", req);
+            freq("arm_badpin", "ARM FREQ D99 100");
+            stub_signal(80000000u, 100, 80000, 20000);
+            snprintf(req, sizeof(req), "ARM FREQ %s 100", cap1);
+            freq("arm_after_errors", req);
+            freq("collect_bad", "COLLECT 4");
+            freq("collect_word", "COLLECT x");
+            freq("collect_none", "COLLECT");
+            freq("arm_cleanup", "COLLECT 0");
+        }
     }
 
     /* the generated pin table */

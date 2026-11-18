@@ -18,15 +18,21 @@ struct capture_raw {
     uint32_t overruns;      // edges lost because they came faster than the interrupt read them
 };
 
-// capture_measure return codes
+// capture_* return codes
 enum {
     CAPTURE_OK = 0,
     CAPTURE_NO_TIMER = -1,  // this STM32 pin can't be routed to the capture timer
     CAPTURE_HW = -2,        // timer clock could not be set up
 };
 
-// Capture both edges on STM32 pin P<port><pin> for window_ms and fill *out.
-// Blocks the calling thread for the window; the edges are timed in hardware.
-int capture_measure(char port, uint8_t pin, uint32_t window_ms, struct capture_raw *out);
+// Start capturing both edges on STM32 pin P<port><pin> for window_ms; returns at once.
+// The edges are timed in hardware. One window at a time.
+int capture_start(char port, uint8_t pin, uint32_t window_ms);
+
+// Block until the window ends, stop and fill *out.
+int capture_finish(struct capture_raw *out);
+
+// Stop a running window without a result (RESET). Does nothing if none is running.
+void capture_cancel(void);
 
 #endif

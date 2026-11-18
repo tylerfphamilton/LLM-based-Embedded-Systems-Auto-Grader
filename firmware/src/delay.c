@@ -193,12 +193,9 @@ int delay_finish(struct delay_raw *out){
     return hit ? DELAY_OK : DELAY_NO_TRIGGER;
 }
 
-int delay_measure(const struct delay_pin *from, const struct delay_pin *to, uint32_t timeout_ms,
-                  struct delay_raw *out){
+void delay_cancel(void){
 
-    int rc = delay_start(from, to, timeout_ms);
-    if (rc != DELAY_OK){
-        return rc;
+    if (running){
+        stop();
     }
-    return delay_finish(out);
 }

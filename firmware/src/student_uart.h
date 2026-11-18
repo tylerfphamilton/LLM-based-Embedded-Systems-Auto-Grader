@@ -32,13 +32,13 @@ enum {
 int su_send(char tx_port, uint8_t tx_pin, uint32_t baud, const uint8_t *data, size_t n);
 
 // Start receiving on STM32 pin P<rx_port><rx_pin> at baud for window_ms; returns at once.
-// (ARM/COLLECT will call start and finish separately.)
+// One READ at a time.
 int su_read_start(char rx_port, uint8_t rx_pin, uint32_t baud, uint32_t window_ms);
 
 // Block until the window ends, stop receiving and fill *out.
 int su_read_finish(struct su_raw *out);
 
-// su_read_start + su_read_finish: the blocking UART READ command.
-int su_read(char rx_port, uint8_t rx_pin, uint32_t baud, uint32_t window_ms, struct su_raw *out);
+// Stop a running READ without a result (RESET). Does nothing if none is running.
+void su_read_cancel(void);
 
 #endif

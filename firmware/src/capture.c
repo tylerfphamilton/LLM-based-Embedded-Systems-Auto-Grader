@@ -23,6 +23,8 @@
 #include <stm32_ll_gpio.h>
 #include <stm32_ll_tim.h>
 
+#include "timebase.h"
+
 #define CAP_TIM_NODE DT_NODELABEL(timers2)
 #define CAP_TIM      ((TIM_TypeDef *)DT_REG_ADDR(CAP_TIM_NODE))
 #define CAP_IRQ      DT_IRQN(CAP_TIM_NODE)
@@ -45,6 +47,8 @@ static volatile struct capture_raw acc;  // filled by the interrupt during a win
 static volatile bool rise_open;          // a rising edge was seen and its falling edge not yet
 static uint32_t tim_clk_hz;
 static bool initialized;
+static const struct capture_input *active;   // the pin of the running window, or NULL
+static uint32_t window_end;                  // timebase tick when the window ends
 
 static void on_rise(uint32_t t){
 
@@ -124,7 +128,22 @@ static int capture_init(void){
     return CAPTURE_OK;
 }
 
-int capture_measure(char port, uint8_t pin, uint32_t window_ms, struct capture_raw *out){
+// stop the timer and its interrupt and give the pin back as a plain input (the pull-down
+// stays on, so the line stays quiet)
+static void stop(void){
+
+    TIM_TypeDef *tim = CAP_TIM;
+    LL_TIM_DisableIT_CC1(tim);
+    LL_TIM_DisableIT_CC2(tim);
+    LL_TIM_DisableCounter(tim);
+    LL_TIM_CC_DisableChannel(tim, LL_TIM_CHANNEL_CH1 | LL_TIM_CHANNEL_CH2);
+    NVIC_ClearPendingIRQ(CAP_IRQ);
+
+    LL_GPIO_SetPinMode(active->gpio, 1u << active->pin, LL_GPIO_MODE_INPUT);
+    active = NULL;
+}
+
+int capture_start(char port, uint8_t pin, uint32_t window_ms){
 
     const struct capture_input *in = NULL;
     for (size_t i = 0; i < sizeof(inputs) / sizeof(inputs[0]); i++){
@@ -135,11 +154,17 @@ int capture_measure(char port, uint8_t pin, uint32_t window_ms, struct capture_r
     if (in == NULL){
         return CAPTURE_NO_TIMER;
     }
+    if (active != NULL){
+        return CAPTURE_HW;      // one window at a time (cmd.c reports BUSY before this)
+    }
     if (!initialized){
         int rc = capture_init();
         if (rc != CAPTURE_OK){
             return rc;
         }
+    }
+    if (tb_init() != 0){
+        return CAPTURE_HW;
     }
 
     TIM_TypeDef *tim = CAP_TIM;
@@ -188,23 +213,31 @@ int capture_measure(char port, uint8_t pin, uint32_t window_ms, struct capture_r
     LL_TIM_CC_EnableChannel(tim, LL_TIM_CHANNEL_CH1 | LL_TIM_CHANNEL_CH2);
     LL_TIM_EnableIT_CC1(tim);
     LL_TIM_EnableIT_CC2(tim);
+    active = in;
+    window_end = tb_now() + tb_us_to_ticks(window_ms * 1000u);
     LL_TIM_EnableCounter(tim);
+    return CAPTURE_OK;
+}
 
-    // the hardware does the timing; this thread just sleeps through the window
-    k_msleep((int32_t)window_ms);
+int capture_finish(struct capture_raw *out){
 
-    LL_TIM_DisableIT_CC1(tim);
-    LL_TIM_DisableIT_CC2(tim);
-    LL_TIM_DisableCounter(tim);
-    LL_TIM_CC_DisableChannel(tim, LL_TIM_CHANNEL_CH1 | LL_TIM_CHANNEL_CH2);
-    NVIC_ClearPendingIRQ(CAP_IRQ);
+    if (active == NULL){
+        return CAPTURE_HW;
+    }
+    // the hardware does the timing; this thread just sleeps until the window ends
+    tb_wait_until(window_end);
+    stop();
 
     unsigned int key = irq_lock();
     *out = acc;
     irq_unlock(key);
     out->clock_hz = tim_clk_hz;
-
-    // release the pin: plain input again (the pull-down stays on, so the line stays quiet)
-    LL_GPIO_SetPinMode(in->gpio, mask, LL_GPIO_MODE_INPUT);
     return CAPTURE_OK;
+}
+
+void capture_cancel(void){
+
+    if (active != NULL){
+        stop();
+    }
 }
