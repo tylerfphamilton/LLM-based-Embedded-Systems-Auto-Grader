@@ -19,4 +19,5 @@ target_sources(app PRIVATE
     src/timebase.c
     src/trace.c
     src/drive.c
+    src/delay.c
 )

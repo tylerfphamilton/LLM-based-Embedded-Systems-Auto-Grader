@@ -25,7 +25,7 @@ FW = ROOT / "firmware" / "src"
 LINE_MAX = 1024
 
 # harness rows "<kind>\t<pin>\t<reply>": one command run on every pin of the table
-PER_PIN_CASES = ("freqpin", "tracepin", "drivepin")
+PER_PIN_CASES = ("freqpin", "tracepin", "drivepin", "delayfrom", "delayto")
 
 COMPILER = next((c for c in ("cc", "gcc", "clang") if shutil.which(c)), None)
 pytestmark = pytest.mark.skipif(
@@ -436,3 +436,119 @@ def test_drive_hardware_errors(drive_cases) -> None:
     assert drive_cases["drive_noport"] == format_response(noport)
     hw = Err("INTERNAL", f"could not drive P{port}{num}")
     assert drive_cases["drive_hw"] == format_response(hw)
+
+
+# --------------------------------------------------------------------------- DELAY
+
+EDGE_CODES = {"RISING": 1, "FALLING": 2, "ANY": 3}
+
+
+def _same_line(a: str, b: str) -> bool:
+    """Two pins with the same number on different ports share one STM32 edge interrupt."""
+    ma, mb = _wired(a), _wired(b)
+    return bool(ma and mb and int(ma.group(2)) == int(mb.group(2)) and ma.group(1) != mb.group(1))
+
+
+def test_delay_checks_both_pins_against_the_pin_map(output, pinmap) -> None:
+    """from_pin needs gpio, to_pin needs timer_capture, both wired (as validate.py requires)."""
+    cases = output[0]
+    if "delay_refs" not in cases:
+        pytest.skip("pin map has no wired gpio or timer_capture pin")
+    from_ref, to_ref = cases["delay_refs"].split()
+    good = ok(delay_ms=3.25, to_edge_count=1)
+    for side, cap, other in (("from", "gpio", to_ref), ("to", "timer_capture", from_ref)):
+        for name, info in pinmap.pins.items():
+            line = cases[f"delay{side}:{name}"]
+            if cap not in info.caps:
+                want = format_response(Err("BADPIN", f"pin {name} has no {cap} capability"))
+            elif not _wired(info.stm32):
+                want = format_response(
+                    Err("BADPIN", f"pin {name} is not wired (TBD in the pin map)")
+                )
+            elif _same_line(info.stm32, pinmap.pins[other].stm32):
+                a, b = (name, other) if side == "from" else (other, name)
+                n = int(_wired(info.stm32).group(2))  # type: ignore[union-attr]
+                want = format_response(
+                    Err("BADARG", f"pins {a} and {b} share edge interrupt line {n}")
+                )
+            else:
+                want = good
+            assert line == want, (side, name)
+    unknown = format_response(Err("BADPIN", "pin D99 is not in the pin map"))
+    assert cases["delay_unknown_from"] == unknown
+    assert cases["delay_unknown_to"] == unknown
+
+
+@pytest.fixture
+def delay_cases(output, pinmap) -> dict[str, str]:
+    cases = output[0]
+    if "delay_pins" not in cases:
+        pytest.skip("pin map has no wired gpio or timer_capture pin")
+    cases = dict(cases)
+    from_pin, to_pin = cases["delay_pins"].split()
+    mf, mt = _wired(pinmap.pins[from_pin].stm32), _wired(pinmap.pins[to_pin].stm32)
+    assert mf and mt
+    cases["_from"], cases["_to"] = from_pin, to_pin
+    cases["_from_stm32"] = (mf.group(1), int(mf.group(2)))
+    cases["_to_stm32"] = (mt.group(1), int(mt.group(2)))
+    # pins the board drives are left as they are; inputs get the pull-down
+    cases["_from_keep"] = int("drive" in pinmap.pins[from_pin].caps)
+    cases["_to_keep"] = int("drive" in pinmap.pins[to_pin].caps)
+    return cases
+
+
+def test_delay_measures_through_the_mapped_stm32_pins(delay_cases) -> None:
+    (fp, fn), (tp, tn) = delay_cases["_from_stm32"], delay_cases["_to_stm32"]
+    fk, tk = delay_cases["_from_keep"], delay_cases["_to_keep"]
+    for case, (from_edge, to_edge, timeout) in {
+        "delay_basic": ("FALLING", "ANY", 100),
+        "delay_rising": ("RISING", "FALLING", 50),
+        "delay_any": ("ANY", "RISING", 20),
+        "delay_long": ("FALLING", "ANY", 10000),
+    }.items():
+        want = (
+            f"{fp} {fn} {EDGE_CODES[from_edge]} {fk} > "
+            f"{tp} {tn} {EDGE_CODES[to_edge]} {tk} / {timeout}"
+        )
+        assert delay_cases[f"{case}_call"] == want, case
+
+
+def test_delay_values(delay_cases) -> None:
+    assert delay_cases["delay_basic"] == ok(delay_ms=3.25, to_edge_count=1)
+    # microsecond resolution (99 ticks = 1.24 us), across the counter wrap
+    assert delay_cases["delay_fine"] == ok(delay_ms=0.001, to_edge_count=1)
+    assert delay_cases["delay_long"] == ok(delay_ms=9999.999, to_edge_count=1)
+    # a bouncy response: the delay is to the first edge, every edge is counted
+    assert delay_cases["delay_bounce"] == ok(delay_ms=0.4, to_edge_count=5)
+
+
+def test_delay_no_response_is_a_valid_measurement(delay_cases) -> None:
+    assert delay_cases["delay_null"] == ok(delay_ms=None, to_edge_count=0)
+
+
+def test_delay_rig_problems_are_errors(delay_cases) -> None:
+    (fp, fn), (tp, tn) = delay_cases["_from_stm32"], delay_cases["_to_stm32"]
+    # the trigger may come up to max(timeout_ms, 1000 ms) after the request
+    notrig = Err("TIMEOUT", f"no FALLING edge on {delay_cases['_from']} within 1000 ms")
+    assert delay_cases["delay_notrigger"] == format_response(notrig)
+    notrig = Err("TIMEOUT", f"no RISING edge on {delay_cases['_from']} within 2000 ms")
+    assert delay_cases["delay_notrigger_long"] == format_response(notrig)
+    noport = Err("INTERNAL", f"no GPIO port for P{fp}{fn} or P{tp}{tn}")
+    assert delay_cases["delay_noport"] == format_response(noport)
+    hw = format_response(Err("INTERNAL", f"edge interrupt setup failed on P{fp}{fn} or P{tp}{tn}"))
+    assert delay_cases["delay_hw"] == hw
+    assert delay_cases["delay_clock0"] == hw
+
+
+def test_delay_rejects_bad_arguments_without_measuring(delay_cases) -> None:
+    errors = {
+        "delay_badfrom": Err("BADARG", "from_edge must be RISING, FALLING or ANY"),
+        "delay_badto": Err("BADARG", "to_edge must be RISING, FALLING or ANY"),
+        "delay_t0": Err("BADARG", "timeout_ms must be 1-10000"),
+        "delay_tbig": Err("BADARG", "timeout_ms must be 1-10000"),
+        "delay_tnan": Err("BADARG", "timeout_ms must be 1-10000"),
+    }
+    for case, err in errors.items():
+        assert delay_cases[case] == format_response(err), case
+        assert delay_cases[f"{case}_call"] == "-", case
+    assert delay_cases["delay_args"] == "ERR BADCMD DELAY takes 5 arguments, got 4"
