@@ -29,6 +29,9 @@ bool pins_wired(const struct pin_def* p);
 // true if the pin map gives the pin the timer_capture capability
 bool pins_can_capture(const struct pin_def* p);
 
+// true if the pin map gives the pin the gpio capability (plain digital input/output)
+bool pins_is_gpio(const struct pin_def* p);
+
 // returns the row with the reset capability (the line to the student board's RST pin),
 // or NULL if the pin map has none
 const struct pin_def* pins_reset_line(void);
