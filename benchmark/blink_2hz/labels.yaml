@@ -1,0 +1,2 @@
+# Ground truth for benchmark metrics only. The grader and the LLM never see this file.
+correct: { faulty: false }
