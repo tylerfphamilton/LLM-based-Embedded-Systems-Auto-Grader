@@ -39,6 +39,14 @@ bool pins_can_drive(const struct pin_def* p);
 // or NULL if the pin map has none
 const struct pin_def* pins_reset_line(void);
 
+// returns the row with the uart_rx capability (wired to the student's Serial1 TX), or
+// NULL if the pin map has none
+const struct pin_def* pins_uart_rx_line(void);
+
+// returns the row with the uart_tx capability (wired to the student's Serial1 RX), or
+// NULL if the pin map has none
+const struct pin_def* pins_uart_tx_line(void);
+
 // returns the Zephyr GPIO device for a port letter, or NULL if the port doesn't exist or isn't enabled
 const struct device* pins_port_device(char port);
 

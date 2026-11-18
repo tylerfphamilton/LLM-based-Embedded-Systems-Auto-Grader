@@ -9,6 +9,7 @@
 #include "pins.h"
 #include "reply.h"
 #include "rig.h"
+#include "student_uart.h"
 #include "trace.h"
 #include "version.h"
 
@@ -496,6 +497,175 @@ static void cmd_delay(const struct args *a, reply_fn reply){
     reply_send(&r, reply);
 }
 
+// the student's Serial1 runs at one of these (the same list as STANDARD_BAUDS in validate.py)
+static const uint32_t uart_bauds[] = {
+    300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400,
+};
+
+// the uart_rx / uart_tx row of the pin map, if it is there and wired; otherwise sends
+// ERR BADPIN and returns NULL
+static const struct pin_def* uart_line(const struct pin_def* p, const char* cap, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    if (p == NULL){
+        snprintf(msg, sizeof(msg), "no %s pin in the pin map", cap);
+        reply_err(reply, "BADPIN", msg);
+        return NULL;
+    }
+    if (!pins_wired(p)){
+        snprintf(msg, sizeof(msg), "%s pin %.16s is not wired (TBD in the pin map)", cap, p->name);
+        reply_err(reply, "BADPIN", msg);
+        return NULL;
+    }
+    return p;
+}
+
+// 0-15 for a hex digit (either case), -1 otherwise
+static int hex_digit(char c){
+
+    if (c >= '0' && c <= '9'){
+        return c - '0';
+    }
+    if (c >= 'A' && c <= 'F'){
+        return c - 'A' + 10;
+    }
+    if (c >= 'a' && c <= 'f'){
+        return c - 'a' + 10;
+    }
+    return -1;
+}
+
+// characters a byte takes inside a reply string: 1 as it is, 3 as %XX (see reply_str)
+static size_t str_cost(uint8_t b){
+    return (b >= 0x21 && b <= 0x7E && b != '%' && b != '"' && b != ',') ? 1 : 3;
+}
+
+// UART <baud> SEND <hex>: send the bytes to the student's Serial1 RX (8N1). OK once the
+// last byte is out.
+static void uart_send(uint32_t baud, const char* hex, reply_fn reply){
+
+    static uint8_t payload[PROTO_LINE_MAX / 2];
+    char msg[REPLY_MAX];
+    size_t len = strlen(hex);
+    struct reply_buf r;
+
+    const struct pin_def* p = uart_line(pins_uart_tx_line(), "uart_tx", reply);
+    if (p == NULL){
+        return;
+    }
+    if (len == 0 || len % 2 != 0 || len / 2 > sizeof(payload)){
+        reply_err(reply, "BADARG", "payload must be hex bytes, e.g. 48690A");
+        return;
+    }
+    for (size_t i = 0; i < len / 2; i++){
+        int hi = hex_digit(hex[2 * i]);
+        int lo = hex_digit(hex[2 * i + 1]);
+        if (hi < 0 || lo < 0){
+            reply_err(reply, "BADARG", "payload must be hex bytes, e.g. 48690A");
+            return;
+        }
+        payload[i] = (uint8_t)(hi << 4 | lo);
+    }
+
+    int rc = su_send(p->port, p->pin, baud, payload, len / 2);
+    if (rc == SU_NO_USART){
+        snprintf(msg, sizeof(msg), "no USART1 on P%c%u (pin %.16s)", p->port, (unsigned)p->pin, p->name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (rc != SU_OK){
+        reply_err(reply, "INTERNAL", "student UART setup failed");
+        return;
+    }
+    reply_begin(&r);
+    reply_send(&r, reply);
+}
+
+// UART <baud> READ <window_ms>: everything the student's Serial1 TX sends in the window.
+//   text           = the raw bytes (percent-encoded on the wire)
+//   byte_count     = bytes received
+//   framing_errors = bytes received with a framing error (e.g. the wrong baud)
+// If the text doesn't fit in one reply line, or more bytes came than the firmware stores,
+// the text is cut short and truncated=1 follows it; byte_count is still the full count.
+static struct su_raw uart_buf;      // ~1 KB: kept off the stack
+
+static void uart_read(uint32_t baud, const char* window, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    uint32_t window_ms;
+    struct reply_buf r;
+
+    const struct pin_def* p = uart_line(pins_uart_rx_line(), "uart_rx", reply);
+    if (p == NULL){
+        return;
+    }
+    if (!parse_u32(window, 10000, &window_ms) || window_ms < 1){
+        reply_err(reply, "BADARG", "window_ms must be 1-10000");
+        return;
+    }
+
+    int rc = su_read(p->port, p->pin, baud, window_ms, &uart_buf);
+    if (rc == SU_NO_USART){
+        snprintf(msg, sizeof(msg), "no USART1 on P%c%u (pin %.16s)", p->port, (unsigned)p->pin, p->name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (rc != SU_OK){
+        reply_err(reply, "INTERNAL", "student UART setup failed");
+        return;
+    }
+    // lost bytes would make the text wrong: that's a rig fault, not a student fault
+    if (uart_buf.overruns != 0){
+        reply_err(reply, "INTERNAL", "uart overrun: bytes arrived faster than the board read them");
+        return;
+    }
+
+    // keep as many leading bytes as fit, leaving room for "OK", the quotes and the
+    // other fields (" truncated=1 byte_count=<10 digits> framing_errors=<10 digits>")
+    size_t budget = PROTO_LINE_MAX - 80;
+    size_t n = 0, used = 0;
+    while (n < uart_buf.stored && used + str_cost(uart_buf.data[n]) <= budget){
+        used += str_cost(uart_buf.data[n]);
+        n++;
+    }
+
+    reply_begin(&r);
+    reply_str(&r, "text", uart_buf.data, n);
+    if (n < uart_buf.byte_count){
+        reply_int(&r, "truncated", 1);
+    }
+    reply_int(&r, "byte_count", uart_buf.byte_count);
+    reply_int(&r, "framing_errors", uart_buf.framing_errors);
+    reply_send(&r, reply);
+}
+
+// UART <baud> SEND <hex>  |  UART <baud> READ <window_ms>
+static void cmd_uart(const struct args *a, reply_fn reply){
+
+    uint32_t baud;
+    bool standard = false;
+
+    if (parse_u32(a->argv[1], 230400, &baud)){
+        for (size_t i = 0; i < sizeof(uart_bauds) / sizeof(uart_bauds[0]); i++){
+            standard = standard || baud == uart_bauds[i];
+        }
+    }
+    if (!standard){
+        reply_err(reply, "BADARG", "baud must be 300, 1200, 2400, 4800, 9600, 19200, 38400, "
+                                   "57600, 115200 or 230400");
+        return;
+    }
+    if (strcmp(a->argv[2], "SEND") == 0){
+        uart_send(baud, a->argv[3], reply);
+    }
+    else if (strcmp(a->argv[2], "READ") == 0){
+        uart_read(baud, a->argv[3], reply);
+    }
+    else {
+        reply_err(reply, "BADARG", "mode must be SEND or READ");
+    }
+}
+
 // Command Table
 // Need to add delay, uart, arm/collect here as they are implemented
 static const struct command commands[] = {
@@ -506,6 +676,7 @@ static const struct command commands[] = {
     {"TRACE", 2, 2, cmd_trace},
     {"DRIVE", 2, 5, cmd_drive},
     {"DELAY", 5, 5, cmd_delay},
+    {"UART", 3, 3, cmd_uart},
 };
 
 

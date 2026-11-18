@@ -20,4 +20,5 @@ target_sources(app PRIVATE
     src/trace.c
     src/drive.c
     src/delay.c
+    src/student_uart.c
 )

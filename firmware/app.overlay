@@ -27,7 +27,14 @@
     status = "disabled";
 };
 
-
+/*
+ * USART1 (PA9 TX / PA10 RX) talks to the student's Serial1. src/student_uart.c drives it
+ * directly with STM32 LL so it can count framing errors per byte and change the baud on
+ * every command; turn off Zephyr's driver so it doesn't claim the USART or its interrupt.
+ */
+&usart1 {
+    status = "disabled";
+};
 
 /*
  * System clock from the 32.768 kHz crystal instead of the internal RC oscillator.
