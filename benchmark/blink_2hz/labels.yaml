@@ -1,2 +1,5 @@
 # Ground truth for benchmark metrics only. The grader and the LLM never see this file.
-correct: { faulty: false }
+correct:   { faulty: false }
+too_fast:  { faulty: true, fault: too_fast }
+stuck:     { faulty: true, fault: stuck }
+wrong_pin: { faulty: true, fault: wrong_pin }
