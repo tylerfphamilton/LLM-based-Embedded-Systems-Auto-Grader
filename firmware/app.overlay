@@ -26,3 +26,35 @@
 &pwm2 {
     status = "disabled";
 };
+
+
+
+/*
+ * System clock from the 32.768 kHz crystal instead of the internal RC oscillator.
+ *
+ * The board default runs the PLL from HSI16, an RC oscillator that can be off by ~1%,
+ * and every FREQ/timing measurement inherits that error. Here MSI (4 MHz) runs in
+ * "PLL mode": the hardware keeps trimming it against the LSE crystal (±20 ppm on the
+ * Nucleo), and the PLL multiplies it up to the same 80 MHz as before:
+ *     4 MHz / div-m 1 * mul-n 40 = 160 MHz VCO, / div-r 2 = 80 MHz SYSCLK
+ * LSE is already enabled by the board file; the clock driver starts it before MSI.
+ */
+&clk_msi {
+    status = "okay";
+    msi-range = <6>;        /* 4 MHz */
+    msi-pll-mode;           /* lock MSI to the LSE crystal */
+};
+
+&pll {
+    clocks = <&clk_msi>;
+    div-m = <1>;
+    mul-n = <40>;
+    div-r = <2>;
+    div-q = <2>;
+    status = "okay";
+};
+
+&rcc {
+    clocks = <&pll>;
+    clock-frequency = <DT_FREQ_M(80)>;
+};
