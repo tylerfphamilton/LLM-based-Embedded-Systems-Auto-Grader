@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "capture.h"
+#include "drive.h"
 #include "pins.h"
 #include "reply.h"
 #include "rig.h"
@@ -264,14 +265,125 @@ static void cmd_trace(const struct args *a, reply_fn reply){
     reply_send(&r, reply);
 }
 
+// HIGH / LOW (/ RELEASE if allowed) -> DRIVE_*; -1 if it is none of them
+static int parse_level(const char* s, bool allow_release){
+
+    if (strcmp(s, "HIGH") == 0){
+        return DRIVE_HIGH;
+    }
+    if (strcmp(s, "LOW") == 0){
+        return DRIVE_LOW;
+    }
+    if (allow_release && strcmp(s, "RELEASE") == 0){
+        return DRIVE_RELEASE;
+    }
+    return -1;
+}
+
+// DRIVE <pin> HIGH|LOW|RELEASE
+// DRIVE <pin> PULSE <width_ms> HIGH|LOW
+// DRIVE <pin> BOUNCE <count> <interval_us> HIGH|LOW
+// The STM32 plays the student's input (a button). Replies OK once the action is complete.
+static void cmd_drive(const struct args *a, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    const char* name = a->argv[1];
+    const char* action = a->argv[2];
+    int n = a->argc - 1;            // arguments after the verb
+    const struct pin_def* p = pins_find(name);
+    struct reply_buf r;
+    int rc;
+
+    if (p == NULL){
+        snprintf(msg, sizeof(msg), "pin %.16s is not in the pin map", name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (!pins_can_drive(p)){
+        snprintf(msg, sizeof(msg), "pin %.16s has no drive capability", name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (!pins_wired(p)){
+        snprintf(msg, sizeof(msg), "pin %.16s is not wired (TBD in the pin map)", name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+
+    if (strcmp(action, "PULSE") == 0){
+        uint32_t width_ms;
+        int level;
+        if (n != 4){
+            reply_err(reply, "BADCMD", "usage: DRIVE <pin> PULSE <width_ms> HIGH|LOW");
+            return;
+        }
+        if (!parse_u32(a->argv[3], 10000, &width_ms) || width_ms < 1){
+            reply_err(reply, "BADARG", "width_ms must be 1-10000");
+            return;
+        }
+        if ((level = parse_level(a->argv[4], false)) < 0){
+            reply_err(reply, "BADARG", "level must be HIGH or LOW");
+            return;
+        }
+        rc = drive_pulse(p->port, p->pin, level, width_ms);
+    }
+    else if (strcmp(action, "BOUNCE") == 0){
+        uint32_t count, interval_us;
+        int level;
+        if (n != 5){
+            reply_err(reply, "BADCMD", "usage: DRIVE <pin> BOUNCE <count> <interval_us> HIGH|LOW");
+            return;
+        }
+        if (!parse_u32(a->argv[3], 100, &count) || count < 1){
+            reply_err(reply, "BADARG", "count must be 1-100");
+            return;
+        }
+        if (!parse_u32(a->argv[4], 100000, &interval_us) || interval_us < 10){
+            reply_err(reply, "BADARG", "interval_us must be 10-100000");
+            return;
+        }
+        if ((level = parse_level(a->argv[5], false)) < 0){
+            reply_err(reply, "BADARG", "level must be HIGH or LOW");
+            return;
+        }
+        rc = drive_bounce(p->port, p->pin, count, interval_us, level);
+    }
+    else {
+        int level;
+        if (n != 2){
+            reply_err(reply, "BADCMD", "usage: DRIVE <pin> HIGH|LOW|RELEASE");
+            return;
+        }
+        if ((level = parse_level(action, true)) < 0){
+            reply_err(reply, "BADARG", "level must be HIGH, LOW or RELEASE");
+            return;
+        }
+        rc = drive_set(p->port, p->pin, level);
+    }
+
+    if (rc == DRIVE_NO_PORT){
+        snprintf(msg, sizeof(msg), "no GPIO port %c (pin %.16s)", p->port, name);
+        reply_err(reply, "INTERNAL", msg);
+        return;
+    }
+    if (rc != DRIVE_OK){
+        snprintf(msg, sizeof(msg), "could not drive P%c%u", p->port, (unsigned)p->pin);
+        reply_err(reply, "INTERNAL", msg);
+        return;
+    }
+    reply_begin(&r);
+    reply_send(&r, reply);
+}
+
 // Command Table
-// Need to add drive, ... here as they are implemented
+// Need to add delay, uart, arm/collect here as they are implemented
 static const struct command commands[] = {
     {"PING", 0, 0, cmd_ping},
     {"FREQ", 2, 2, cmd_freq},
     {"WAIT", 1, 1, cmd_wait},
     {"RESET", 0, 0, cmd_reset},
     {"TRACE", 2, 2, cmd_trace},
+    {"DRIVE", 2, 5, cmd_drive},
 };
 
 

@@ -51,6 +51,21 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
 
 ### Measurement semantics
 
+### Stimulus semantics
+
+* `DRIVE`: only pins with the `drive` capability (wired through a 1 kΩ series resistor).
+  `HIGH`/`LOW` make the pin a push-pull output; `RELEASE` makes it an input with no pull,
+  so the student board's own pull-up/down sets the level. Every pin starts released at
+  boot. Replies `OK` once the action is complete.
+  * `PULSE <width_ms> HIGH|LOW` (1–10000 ms): drive to the level, wait `width_ms` on the
+    timebase, then restore whatever the pin was before (driven high, driven low or released).
+  * `BOUNCE <count> <interval_us> HIGH|LOW` (count 1–100, interval 10–100000 µs): exactly
+    `count` level changes, `interval_us` apart, the last one leaving the pin at the given
+    level. The first change is immediate. With an odd count the pin starts at the opposite
+    level, so pressing a released, pulled-up button (`BOUNCE 5 200 LOW`) adds no extra
+    edge; an even count starts at the final level. Changes are scheduled on the TIM5
+    timebase (each from the previous deadline, so errors don't add up); an interrupt can
+    delay a single change by a few µs.
 * `FREQ`: `edge_count` is the number of **rising** edges in the window (100 for 1 kHz
   over 100 ms). `frequency_hz` = (rising edges − 1) / time from the first to the last
   rising edge; `duty_pct` = average high time / average period, from pulses whose rising

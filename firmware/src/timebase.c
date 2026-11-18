@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <stdbool.h>
+#include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control.h>
@@ -61,4 +62,28 @@ uint32_t tb_now(void){
 
 uint32_t tb_hz(void){
     return hz;
+}
+
+
+uint32_t tb_us_to_ticks(uint32_t us){
+    return (uint32_t)(((uint64_t)us * hz) / 1000000u);
+}
+
+void tb_wait_until(uint32_t deadline){
+
+    if (hz == 0){
+        return;    // timebase not running: nothing to wait on
+    }
+
+    // ticks still to go; signed, so a deadline already in the past returns at once
+    int32_t left;
+    while ((left = (int32_t)(deadline - tb_now())) > 0){
+        uint64_t left_us = ((uint64_t)left * 1000000u) / hz;
+        if (left_us > 1000){
+            // far away: sleep, but wake up ~0.5 ms early (the kernel tick is 100 us and
+            // a sleep can end up to one tick late)
+            k_sleep(K_USEC(left_us - 500));
+        }
+        // close: spin on the counter
+    }
 }
