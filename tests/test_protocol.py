@@ -148,4 +148,4 @@ def test_pin_names_come_from_the_plan(root) -> None:
     plan = load_plan(root / "plans" / "button_toggle.json")
     lines = [pr.command_for_step(s).to_line() for s in plan.steps]
     assert "DELAY D2 FALLING D13 ANY 100" in lines
-    assert "DRIVE D2 BOUNCE 5 200 LOW" in lines
+    assert "DRIVE D2 BOUNCE 7 1000 LOW" in lines

@@ -31,8 +31,15 @@ Stimuli and concurrent measurements (how the measuring board works):
 - `release` lets the student's own pull-up or pull-down set the pin. For an active-low
   button with `INPUT_PULLUP`, "not pressed" is `release`, never `high`: driving it high
   would hide a sketch that forgot the pull-up.
-- A bouncy press is `bounce` from a released pin with an odd `count` (for example 5 at
-  200 µs) ending at the pressed level. An even count adds an extra edge at the start.
+- Bounce every press and at least one release, each bounce lasting at least 5 ms (for
+  example `count` 7 at `interval_us` 1000): a shorter bounce can end while a sketch is busy
+  printing a line, which hides missing debounce. Use an odd `count` (an even one adds an
+  extra edge at the start). A press starts from a released pin and ends `low`; a bouncy
+  release ends `high` and is followed at once by a `release` step.
+- Check the student's pull-up once: release the button straight from `low` (no bounce, not
+  right after driving it high), then `logic_trace` the button pin for about 50 ms and
+  expect `final_level` 1. Without a pull-up the pin stays low; driving it high first would
+  charge the line and hide that.
 - Measure steps marked `concurrent_with_next` start together, the one step right after
   them runs, and then all of them are collected before any later step. So each window or
   timeout must cover the whole response to that stimulus.

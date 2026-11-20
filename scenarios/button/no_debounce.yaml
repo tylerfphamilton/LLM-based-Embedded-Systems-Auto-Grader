@@ -12,6 +12,10 @@ responses:
     replies:
       - { text: "ON\r\nOFF\r\nON\r\nOFF\r\nON\r\n", byte_count: 22, framing_errors: 0 }
       - { text: "OFF\r\nON\r\nOFF\r\nON\r\nOFF\r\n", byte_count: 23, framing_errors: 0 }
+  - match: { cmd: TRACE, pin: D13 }
+    reply: { edge_count: 3, final_level: 0, edges_ms: [5.2, 7.3, 9.1] }
+  - match: { cmd: TRACE, pin: D2 }
+    reply: { edge_count: 0, final_level: 1, edges_ms: [] }
 expected_verdicts:
   press1_led.delay_ms: PASS
   press1_led.to_edge_count: FAIL
@@ -21,3 +25,6 @@ expected_verdicts:
   press2_led.to_edge_count: FAIL
   press2_msg.text: FAIL
   press2_msg.framing_errors: PASS
+  release1_led.edge_count: FAIL
+  release1_led.final_level: FAIL
+  pullup.final_level: PASS

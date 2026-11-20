@@ -70,7 +70,7 @@ def test_button_uses_arm_collect_on_the_wire(pinmap, rig_profile) -> None:
         "WAIT 100",
         "ARM DELAY D2 FALLING D13 ANY 100",
         "ARM UART 9600 READ 200",
-        "DRIVE D2 BOUNCE 5 200 LOW",
+        "DRIVE D2 BOUNCE 7 1000 LOW",
     ]
     assert tx[9:11] == ["COLLECT 0", "COLLECT 1"]
     # Simulated time advances with the board-side waits/windows, so timestamps are meaningful.

@@ -26,8 +26,19 @@
         { "field": "framing_errors", "op": "eq", "value": 0 }
       ]
     },
-    { "op": "drive", "id": "press1", "pin": "D2", "action": "bounce", "count": 5, "interval_us": 200, "final_level": "low" },
+    { "op": "drive", "id": "press1", "pin": "D2", "action": "bounce", "count": 7, "interval_us": 1000, "final_level": "low" },
     { "op": "wait", "ms": 100 },
+
+    {
+      "op": "measure", "id": "release1_led", "concurrent_with_next": true,
+      "requirement": "Releasing the button (with bounce) does not change the LED",
+      "primitive": "logic_trace", "pin": "D13", "window_ms": 300,
+      "expect": [
+        { "field": "edge_count", "op": "eq", "value": 0 },
+        { "field": "final_level", "op": "eq", "value": 1 }
+      ]
+    },
+    { "op": "drive", "id": "release1_bounce", "pin": "D2", "action": "bounce", "count": 7, "interval_us": 1000, "final_level": "high" },
     { "op": "drive", "id": "release1", "pin": "D2", "action": "release" },
     { "op": "wait", "ms": 200 },
 
@@ -50,16 +61,23 @@
         { "field": "framing_errors", "op": "eq", "value": 0 }
       ]
     },
-    { "op": "drive", "id": "press2", "pin": "D2", "action": "bounce", "count": 5, "interval_us": 200, "final_level": "low" },
+    { "op": "drive", "id": "press2", "pin": "D2", "action": "bounce", "count": 7, "interval_us": 1000, "final_level": "low" },
     { "op": "wait", "ms": 100 },
-    { "op": "drive", "id": "release2", "pin": "D2", "action": "release" }
+    { "op": "drive", "id": "release2", "pin": "D2", "action": "release" },
+    {
+      "op": "measure", "id": "pullup",
+      "requirement": "D2 has a pull-up: with the button released, the pin reads high",
+      "primitive": "logic_trace", "pin": "D2", "window_ms": 50,
+      "expect": [ { "field": "final_level", "op": "eq", "value": 1 } ]
+    }
   ],
   "not_graded": [
     { "requirement": "Debounce is implemented in software (not with delay())", "reason": "Only the observable behaviour (one LED edge per press) is graded" },
     { "requirement": "Code is commented and readable", "reason": "Not observable electrically" }
   ],
   "assumptions": [
-    "The student enables the internal pull-up on D2 (INPUT_PULLUP), so the rig releases D2 (high-Z) when the button is not pressed",
+    "The student enables the internal pull-up on D2 (INPUT_PULLUP); the rig releases D2 (high-Z) when the button is not pressed, and checks once, after releasing straight from low, that D2 then reads high",
+    "A bouncy press or release is 7 level changes 1 ms apart (about 6 ms of bounce)",
     "The LED starts off after reset, so the first press prints ON",
     "Each message is a single line; trailing CR/LF is ignored"
   ]

@@ -498,3 +498,19 @@ plan is made once per assignment and reviewed, so the larger model's price hardl
 matters; feedback runs once per failing submission, so it stays on Sonnet. Both are
 small samples (two drafts each). `price_per_mtok` prices the feedback model only, since
 only batch output reports cost. `max_tokens.plan` is now 32000.
+
+**D62. Button stimuli: long bounces, a bouncy release, and an explicit pull-up check
+(instead of an open-drain rig).** On the 17-sketch button benchmark, a 0.8 ms bounce
+(5 x 200 us) hid a debounce measured in microseconds (`submission_05`): `Serial1.println`
+probably blocks about 4 ms at 9600 baud, so the bounce is over before the loop reads the pin
+again. A clean release hid a sketch that toggles on release bounce (`submission_07`), and a
+bouncy release on the push-pull rig ends with D2 driven high, which charges the floating
+line and hides a missing pull-up (`submission_08`). The rig stays push-pull. Instead the plan
+prompt and `plans/button_toggle.json` now:
+* bounce every press and at least one release for at least 5 ms (7 changes, 1 ms apart);
+* check the pull-up once: release D2 straight from LOW, then trace D2 for 50 ms and expect
+  `final_level` 1 (TRACE leaves a drive pin as DRIVE set it, with no pull of its own).
+Keeping push-pull means every press starts by driving D2 high, so the press delay check
+always has its trigger edge, even without a pull-up (an open-drain rig would turn that check
+into ERROR). Open-drain D2 stays a fallback if generated plans skip the pull-up check. The
+button scenarios gained replies and verdicts for the two new traces.
