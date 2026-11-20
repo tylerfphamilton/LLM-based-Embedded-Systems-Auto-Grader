@@ -77,7 +77,7 @@ def first_request(name: str, handout: str, pinmap_yaml: str, cfg: LLMConfig) -> 
         system=system,
         messages=[{"role": "user", "content": user_message(name, handout, pinmap_yaml)}],
         tool=plan_tool(),
-        model=cfg.model,
+        model=cfg.planner_model,
         max_tokens=cfg.plan_max_tokens,
         temperature=cfg.temperature,
     )

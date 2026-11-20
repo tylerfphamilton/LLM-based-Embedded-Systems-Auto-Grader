@@ -1,12 +1,17 @@
 # LLM settings for `grader make-plan` and `--feedback llm`. The API key is never stored
 # here: export ANTHROPIC_API_KEY instead.
 #
-# !!! model is a PLACEHOLDER. Set a current Claude model ID from Anthropic's docs
-# !!! (https://platform.claude.com/docs/en/about-claude/models/overview).
-model: claude-sonnet-5
+# Model IDs from Anthropic's docs
+# (https://platform.claude.com/docs/en/about-claude/models/overview). A single
+# `model: <id>` is used for both. Opus writes more reliable plans (more thorough stimuli,
+# fewer timing mistakes; docs/decisions.md D61); a plan is made once per assignment, so
+# the larger model is cheap there. Feedback runs once per failing submission: Sonnet.
+model:
+  plan: claude-opus-5-5     # grader make-plan
+  feedback: claude-sonnet-5 # --feedback llm
 
 max_tokens:
-  plan: 16000       # a plan is a few KB of JSON; leave room for the model to think
+  plan: 32000       # a plan is a few KB of JSON; leave room for the model to think
   feedback: 8000    # includes thinking; one hard no-signal sketch used >4000
 
 # The Messages API rejects `temperature` since API version 2026-10-21 (anthropic SDK >= 2.0),
@@ -23,10 +28,10 @@ max_retries: 2      # the SDK retries 408/409/429/5xx and connection errors itse
 #          accepts forced tool use. See docs/decisions.md D37.
 force_tool: false
 
-# List prices in USD per million tokens, used only to report cost in `batch` output
-# (summary.csv and the printed totals). Copy them from Anthropic's pricing page for the
-# model above (https://platform.claude.com/docs/en/about-claude/pricing); leave them null
-# to report tokens without a cost. Sonnet 5 list price as of 2026-10-25: $2 in / $10 out.
+# List prices in USD per million tokens of the *feedback* model, used only to report cost
+# in `batch` output (summary.csv and the printed totals). Copy them from Anthropic's pricing
+# page (https://platform.claude.com/docs/en/about-claude/pricing); leave them null to report
+# tokens without a cost. Sonnet 5 list price as of 2026-10-25: $2 in / $10 out.
 price_per_mtok:
   input: 2.00
   output: 10.00

@@ -148,3 +148,14 @@ def test_prices_give_cost(tmp_path) -> None:
     assert cfg.cost_usd(1_000_000, 0) == pytest.approx(2.0)
     assert cfg.cost_usd(1848, 268) == pytest.approx(0.006376)
     assert LLMConfig().cost_usd(1848, 268) is None  # no prices configured
+
+
+def test_separate_plan_and_feedback_models(tmp_path) -> None:
+    path = tmp_path / "llm.yaml"
+    path.write_text("model:\n  plan: big\n  feedback: small\n", encoding="utf-8")
+    cfg = load_llm_config(path)
+    assert (cfg.planner_model, cfg.model) == ("big", "small")
+    path.write_text("model: one\n", encoding="utf-8")  # a single model is used for both
+    assert load_llm_config(path).planner_model == "one"
+    with pytest.raises(LLMError, match="placeholder"):
+        LLMConfig(model="small", plan_model=MODEL_PLACEHOLDER).check()

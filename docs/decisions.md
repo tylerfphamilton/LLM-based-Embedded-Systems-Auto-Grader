@@ -486,3 +486,15 @@ then printed OFF on the first press, and correct sketches failed. The runner now
 `DRIVE <pin> RELEASE` for every wired pin with the `drive` capability (pin map, not TBD)
 before the reset, whatever the plan does. Releasing in the firmware's `RESET` as well
 would also work; the host-side fix needs no reflash.
+
+**D61. Opus writes plans, Sonnet writes feedback.** `config/llm.yaml` takes
+`model: {plan: ..., feedback: ...}` (a plain `model: X` still means X for both). On the
+button assignment, two Opus drafts both had sound stimulus structure (settling time
+before every press, every press bounced and timed, releases checked separately) and no
+false fails on hardware; both Sonnet drafts left too little time between a release and
+the next press (about 10 ms, so a debounce longer than that would false-fail) and timed
+only one press. Opus also used fewer output tokens per plan (3.0-3.3k vs 6.6-10.7k). A
+plan is made once per assignment and reviewed, so the larger model's price hardly
+matters; feedback runs once per failing submission, so it stays on Sonnet. Both are
+small samples (two drafts each). `price_per_mtok` prices the feedback model only, since
+only batch output reports cost. `max_tokens.plan` is now 32000.

@@ -63,7 +63,8 @@ class LLMClient(Protocol):
 
 @dataclass(frozen=True)
 class LLMConfig:
-    model: str = MODEL_PLACEHOLDER
+    model: str = MODEL_PLACEHOLDER  # feedback model; also the planner's unless plan_model is set
+    plan_model: str | None = None  # make-plan model
     plan_max_tokens: int = 16000
     feedback_max_tokens: int = 4000
     temperature: float | None = None
@@ -81,20 +82,30 @@ class LLMConfig:
             input_tokens * self.price_input_per_mtok + output_tokens * self.price_output_per_mtok
         ) / 1_000_000
 
+    @property
+    def planner_model(self) -> str:
+        return self.plan_model or self.model
+
     def check(self) -> None:
-        if not self.model or self.model == MODEL_PLACEHOLDER:
-            raise LLMError(
-                "config/llm.yaml: 'model' is still the placeholder; set a current Claude "
-                "model ID from Anthropic's docs."
-            )
+        for name in dict.fromkeys([self.model, self.planner_model]):
+            if not name or name == MODEL_PLACEHOLDER:
+                raise LLMError(
+                    "config/llm.yaml: 'model' is still the placeholder; set a current Claude "
+                    "model ID from Anthropic's docs."
+                )
 
 
 def load_llm_config(path: str | Path) -> LLMConfig:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     mt = data.get("max_tokens") or {}
     price = data.get("price_per_mtok") or {}
+    model = data.get("model")
+    # `model: X` is used for everything; `model: {plan: X, feedback: Y}` splits them.
+    plan = model.get("plan") if isinstance(model, dict) else None
+    model = model.get("feedback") if isinstance(model, dict) else model
     return LLMConfig(
-        model=str(data.get("model") or MODEL_PLACEHOLDER),
+        model=str(model or MODEL_PLACEHOLDER),
+        plan_model=str(plan) if plan else None,
         plan_max_tokens=int(mt.get("plan", 16000)),
         feedback_max_tokens=int(mt.get("feedback", 4000)),
         temperature=data.get("temperature"),

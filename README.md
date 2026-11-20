@@ -59,8 +59,8 @@ arduino-cli core update-index
 arduino-cli core install arduino:mbed_nano
 ```
 
-For the LLM features, set `ANTHROPIC_API_KEY` in your environment and a Claude model ID
-in `config/llm.yaml` (never put the key in the repo).
+For the LLM features, set `ANTHROPIC_API_KEY` in your environment (never put the key in
+the repo). `config/llm.yaml` names the models: Opus for `make-plan`, Sonnet for feedback.
 
 ## Usage
 

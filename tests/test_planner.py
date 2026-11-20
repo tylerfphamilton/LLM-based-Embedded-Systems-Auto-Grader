@@ -318,3 +318,9 @@ def test_hash_ignores_line_endings(tmp_path) -> None:
     a.write_bytes(b'{\n  "x": 1\n}\n')
     b.write_bytes(b'{\r\n  "x": 1\r\n}\r\n')
     assert file_sha256(a) == file_sha256(b)
+
+
+def test_make_plan_uses_the_plan_model() -> None:
+    cfg = LLMConfig(model="feedback-model", plan_model="plan-model")
+    req = first_request("pwm_1khz", "handout", "pins: {}", cfg)
+    assert req.model == "plan-model"
