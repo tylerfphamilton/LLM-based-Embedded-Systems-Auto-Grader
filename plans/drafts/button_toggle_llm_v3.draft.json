@@ -1,0 +1,213 @@
+{
+  "schema_version": "0.1",
+  "assignment": "button_toggle_llm_v3",
+  "description": "Verify that a D2 button toggles the D13 LED (off after reset, toggles on each press, debounced to exactly one toggle per bouncy press, reacts quickly) and that each toggle is reported as ON/OFF over Serial1 at 9600 baud.",
+  "setup": {
+    "reset": true,
+    "boot_wait_ms": 1000
+  },
+  "steps": [
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release",
+      "id": "btn_release_0"
+    },
+    {
+      "op": "measure",
+      "id": "led_off_after_reset",
+      "requirement": "The LED is off right after reset, with the button not pressed.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 200,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press1_delay",
+      "requirement": "The LED turns on quickly after the first button press.",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "any",
+      "timeout_ms": 50,
+      "expect": [
+        {
+          "op": "not_null",
+          "field": "delay_ms"
+        },
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 50
+        }
+      ],
+      "concurrent_with_next": true
+    },
+    {
+      "op": "measure",
+      "id": "press1_uart",
+      "requirement": "After the first press turns the LED on, the board prints ON on its own line on Serial1 at 9600 baud.",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 200,
+      "expect": [
+        {
+          "op": "contains",
+          "field": "text",
+          "value": "ON"
+        },
+        {
+          "op": "eq",
+          "field": "framing_errors",
+          "value": 0
+        }
+      ],
+      "concurrent_with_next": true
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "low",
+      "id": "press1_drive"
+    },
+    {
+      "op": "measure",
+      "id": "press1_state",
+      "requirement": "After the first press the LED stays steadily on (it toggled exactly once).",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 100,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release",
+      "id": "btn_release_1"
+    },
+    {
+      "op": "measure",
+      "id": "press2_uart",
+      "requirement": "After the second press turns the LED off, the board prints OFF on its own line on Serial1.",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 200,
+      "expect": [
+        {
+          "op": "contains",
+          "field": "text",
+          "value": "OFF"
+        },
+        {
+          "op": "eq",
+          "field": "framing_errors",
+          "value": 0
+        }
+      ],
+      "concurrent_with_next": true
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "low",
+      "id": "press2_drive"
+    },
+    {
+      "op": "measure",
+      "id": "press2_state",
+      "requirement": "The second press toggles the LED back off.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 100,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release",
+      "id": "btn_release_2"
+    },
+    {
+      "op": "measure",
+      "id": "debounce_check",
+      "requirement": "A single bouncy press toggles the LED exactly once, no matter how many bounce edges occur.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 300,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 1
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 1
+        }
+      ],
+      "concurrent_with_next": true
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 5,
+      "interval_us": 2000,
+      "final_level": "low",
+      "id": "bounce_press"
+    }
+  ],
+  "not_graded": [
+    {
+      "requirement": "Implement debouncing in software, without blocking delay() calls.",
+      "reason": "Whether the implementation uses delay() or is purely software-timed is a code-structure detail that cannot be determined from electrical signals alone."
+    },
+    {
+      "requirement": "Comment your code.",
+      "reason": "Code comments are a style requirement not observable through any electrical measurement."
+    }
+  ],
+  "assumptions": [
+    "The handout gives no numeric limit for 'quick' LED reaction, so we require the LED to change within 50 ms of the button's falling edge.",
+    "The handout gives no bounce profile, so we simulate a bouncy press with 5 edges at 2 ms (2000 us) intervals, typical of mechanical switch bounce, ending at the pressed (low) level.",
+    "The debounce-check window of 300 ms is sized to cover the bounce duration plus any reasonable software debounce delay and the LED's reaction, while still only accepting exactly one toggle.",
+    "uart framing_errors is expected to be exactly 0 on each serial check, confirming the student used the specified 9600 baud rate.",
+    "Each toggle is verified by letting the button rest in the new pressed/released state after the stimulus, then sampling LED steadiness (edge_count 0) and final level, rather than catching the exact transition, to avoid stacking a conflicting concurrent measurement on the same pin as the edge_delay/uart checks."
+  ]
+}

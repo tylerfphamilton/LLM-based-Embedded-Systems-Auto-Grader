@@ -2,7 +2,7 @@
   "schema_version": "0.1",
   "assignment": "button_toggle",
   "description": "A bouncy active-low button on D2 toggles the LED on D13 within 20 ms and prints ON/OFF on Serial1 at 9600 baud; bounce must be ignored.",
-  "setup": { "reset": true, "boot_wait_ms": 500 },
+  "setup": { "reset": true, "boot_wait_ms": 1000 },
   "steps": [
     { "op": "drive", "id": "idle", "pin": "D2", "action": "release" },
     { "op": "wait", "ms": 100 },

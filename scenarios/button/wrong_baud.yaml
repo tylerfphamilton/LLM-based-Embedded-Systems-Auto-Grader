@@ -1,5 +1,6 @@
 submission: button_wrong_baud
 assignment: button_toggle
+sketch: benchmark/button_toggle/wrong_baud
 description: Serial1.begin(115200) instead of 9600. The rig receives garbage with framing errors.
 ground_truth: { faulty: true, fault: wrong_baud }
 responses:

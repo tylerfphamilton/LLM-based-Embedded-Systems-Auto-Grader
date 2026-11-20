@@ -1,0 +1,17 @@
+source: llm
+status: draft
+handout: handouts/button_toggle.md
+handout_sha256: be7081cbb19db385637c528726ecd587bc82f435820dcf243bad0d023c76e453
+model: claude-sonnet-5
+prompt_version: d5145a73
+attempts: 1
+notes:
+- 'attempt 1: plan was nested under ''plan''; unwrapped it'
+tokens:
+  input: 12010
+  output: 10674
+generated_at: '2026-11-19T00:28:39.062569+00:00'
+draft: plans/drafts/button_toggle_llm_v3.draft.json
+approved_by: null
+approved_at: null
+plan_sha256: null

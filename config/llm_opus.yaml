@@ -1,0 +1,32 @@
+# LLM settings for `grader make-plan` and `--feedback llm`. The API key is never stored
+# here: export ANTHROPIC_API_KEY instead.
+#
+# !!! model is a PLACEHOLDER. Set a current Claude model ID from Anthropic's docs
+# !!! (https://platform.claude.com/docs/en/about-claude/models/overview).
+model: claude-opus-5-5
+
+max_tokens:
+  plan: 32000       # a plan is a few KB of JSON; leave room for the model to think
+  feedback: 8000    # includes thinking; one hard no-signal sketch used >4000
+
+# The Messages API rejects `temperature` since API version 2026-10-21 (anthropic SDK >= 2.0),
+# so it must stay null. See docs/decisions.md D36.
+temperature: null
+
+timeout_s: 120
+max_retries: 2      # the SDK retries 408/409/429/5xx and connection errors itself
+
+# false -> tool_choice {"type": "auto"}; the prompt tells the model which tool to call, and
+#          make-plan retries if it answers in plain text instead (D39).
+# true  -> tool_choice {"type": "tool", "name": ...}. Current models such as Claude Opus 5.5,
+#          Sonnet 5.5 and Fable 5.1 reject this with a 400; only enable it for a model that
+#          accepts forced tool use. See docs/decisions.md D37.
+force_tool: false
+
+# List prices in USD per million tokens, used only to report cost in `batch` output
+# (summary.csv and the printed totals). Copy them from Anthropic's pricing page for the
+# model above (https://platform.claude.com/docs/en/about-claude/pricing); leave them null
+# to report tokens without a cost. Sonnet 5 list price as of 2026-10-25: $2 in / $10 out.
+price_per_mtok:
+  input: 4.00
+  output: 20.00

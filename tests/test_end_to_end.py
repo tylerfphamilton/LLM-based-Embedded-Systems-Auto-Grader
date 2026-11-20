@@ -61,17 +61,18 @@ def test_button_uses_arm_collect_on_the_wire(pinmap, rig_profile) -> None:
     scenario = load_scenario(ROOT / "scenarios/button/correct.yaml")
     report = grade_scenario(plan_for(scenario), scenario, pinmap=pinmap, rig_profile=rig_profile)
     tx = [e.line for e in report.command_log if e.dir == "tx"]
-    assert tx[:8] == [
+    assert tx[:9] == [
         "PING",
+        "DRIVE D2 RELEASE",  # setup: undo whatever the previous plan left driven
         "RESET",
-        "WAIT 500",
+        "WAIT 1000",
         "DRIVE D2 RELEASE",
         "WAIT 100",
         "ARM DELAY D2 FALLING D13 ANY 100",
         "ARM UART 9600 READ 200",
         "DRIVE D2 BOUNCE 5 200 LOW",
     ]
-    assert tx[8:10] == ["COLLECT 0", "COLLECT 1"]
+    assert tx[9:11] == ["COLLECT 0", "COLLECT 1"]
     # Simulated time advances with the board-side waits/windows, so timestamps are meaningful.
     assert report.command_log[-1].t_ms > 1000
 
@@ -113,7 +114,7 @@ def test_malformed_reply_is_error(pinmap, rig_profile) -> None:
 def test_setup_failure_marks_everything_error(pinmap, rig_profile) -> None:
     r = _pwm_run(pinmap, rig_profile, {"fail_command": {"cmd": "RESET", "error": "ERR INTERNAL"}})
     assert set(r.verdicts().values()) == {Verdict.ERROR}
-    assert [e.line for e in r.command_log if e.dir == "tx"] == ["PING", "RESET"]
+    assert [e.line for e in r.command_log if e.dir == "tx"] == ["PING", "DRIVE D2 RELEASE", "RESET"]
 
 
 class CompileFails(Flasher):
@@ -229,3 +230,16 @@ def test_scenario_sketch_links_exist(path: Path) -> None:
     text = ino.read_text(encoding="utf-8")
     for hint in ("PLACEHOLDER", "Scenario:", "Planted bug"):  # the LLM must not be told
         assert hint not in text, f"{ino} still names its fault ({hint!r})"
+
+
+def test_setup_releases_drive_pins_before_reset(pinmap, rig_profile) -> None:
+    # A plan that ends with the button pressed must not leave it pressed for the next
+    # sketch: RESET only pulses the Nano's reset line.
+    scenario = load_scenario(ROOT / "scenarios/pwm/correct.yaml")
+    report = grade_scenario(plan_for(scenario), scenario, pinmap=pinmap, rig_profile=rig_profile)
+    tx = [e.line for e in report.command_log if e.dir == "tx"]
+    assert tx[:3] == ["PING", "DRIVE D2 RELEASE", "RESET"]
+    tbd = pinmap.model_copy(deep=True)
+    tbd.pins["D2"].stm32 = "TBD"  # not wired: nothing to release
+    report = grade_scenario(plan_for(scenario), scenario, pinmap=tbd, rig_profile=rig_profile)
+    assert [e.line for e in report.command_log if e.dir == "tx"][1] == "RESET"

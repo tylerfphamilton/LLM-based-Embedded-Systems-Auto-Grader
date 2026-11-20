@@ -460,3 +460,29 @@ follow it, and the default request list is now empty. The exit code is 1 if `pro
   `report.json`. An item that refers to another check copies that check's `cause_found`.
   In `report.md`, `cause_found: false` changes the label from "Feedback" to "Possible
   causes", and a referring item starts with "Same cause as *requirement* (`field`)."
+
+**D59. The validator rejects concurrent groups the firmware refuses.** Tyler's ARM/COLLECT
+firmware answers `ERR BUSY`/`ERR BADCMD` for some combinations, which would only show up
+at run time as ERROR checks. `validate.py` now rejects them, so `make-plan`'s repair loop
+fixes them before a run:
+* at most 4 measure steps before one stimulus, only `edge_delay`, `freq_duty`,
+  `logic_trace` and `uart_read`, at most one of each, and no shared pins;
+* `edge_delay`/`logic_trace` pins with the same STM32 pin number on different ports
+  (PA3/PB3, one edge-interrupt line), also for a single `edge_delay`;
+* a `uart_send` stimulus at a different baud from an armed `uart_read`;
+* an `edge_delay` whose `from_pin` has the `drive` capability must be concurrent, with a
+  drive step on that pin as its stimulus. Otherwise the board never drives the pin and
+  the delay always times out.
+The plan prompt gained the matching facts, plus: an active-low button is "not pressed"
+when released (never driven high, which hides a missing `INPUT_PULLUP`), and a bouncy
+press uses an odd `count` (an even one adds an edge first). `plans/button_toggle.json`
+now waits 1000 ms after reset, like the other plans.
+
+**D60. Setup releases every drive pin before RESET.** `RESET` only pulses the Nano's reset
+line; a pin the STM32 drives keeps its state. A plan that ended with the button pressed
+(`button_toggle_sonnet_a` ends on a bounce to LOW) left D2 low for the next submission, so
+that sketch booted with the button held: polled sketches toggled the LED during boot and
+then printed OFF on the first press, and correct sketches failed. The runner now sends
+`DRIVE <pin> RELEASE` for every wired pin with the `drive` capability (pin map, not TBD)
+before the reset, whatever the plan does. Releasing in the firmware's `RESET` as well
+would also work; the host-side fix needs no reflash.

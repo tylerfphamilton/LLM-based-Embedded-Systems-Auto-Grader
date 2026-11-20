@@ -1,5 +1,6 @@
 submission: button_correct_alt_style
 assignment: button_toggle
+sketch: benchmark/button_toggle/correct_alt_style
 description: Correct, but uses a 10 ms debounce timer (slower response, still under 20 ms) and println-free output ("ON\n").
 ground_truth: { faulty: false }
 noise: { seed: 3, fields: { delay_ms: { abs: 0.05 } } }

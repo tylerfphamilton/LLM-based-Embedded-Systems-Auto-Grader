@@ -1,5 +1,6 @@
 submission: button_rig_stimulus_fault
 assignment: button_toggle
+sketch: benchmark/button_toggle/correct
 description: >
   The rig cannot drive the bounce on D2 (ERR BUSY). Measurements armed around a failed
   stimulus mean nothing, so every concurrent check is ERROR (rig fault), never FAIL.

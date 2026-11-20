@@ -1,5 +1,6 @@
 submission: button_too_slow
 assignment: button_toggle
+sketch: benchmark/button_toggle/too_slow
 description: Debounces with a blocking delay(35), so the LED responds after about 35 ms.
 ground_truth: { faulty: true, fault: too_slow }
 noise: { seed: 11, fields: { delay_ms: { abs: 0.05 } } }

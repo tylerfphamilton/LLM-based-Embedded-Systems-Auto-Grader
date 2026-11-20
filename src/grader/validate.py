@@ -34,6 +34,11 @@ from grader.plan import (
 
 STANDARD_BAUDS = (300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400)
 
+# What the firmware's ARM accepts, and how many it can run at once (docs/protocol.md).
+ARMABLE = ("edge_delay", "freq_duty", "logic_trace", "uart_read")
+MAX_ARMED = 4
+DRIVE_TYPES = (DriveLevelStep, DrivePulseStep, DriveBounceStep)
+
 TEXT_FIELDS = {"text"}
 LIST_FIELDS = {"edges_ms", "transactions"}
 
@@ -105,7 +110,7 @@ def _check_expectations(errors: _Errors, where: str, step: MeasureBase) -> None:
 
 
 def _check_step(errors: _Errors, where: str, step: Any, pinmap: PinMap) -> None:
-    if isinstance(step, DriveLevelStep | DrivePulseStep | DriveBounceStep):
+    if isinstance(step, DRIVE_TYPES):
         _check_pin(errors, where, "driven", step.pin, "drive", pinmap)
         if isinstance(step, DrivePulseStep):
             errors.range(where, "width_ms", step.width_ms, 1, 10000)
@@ -135,6 +140,13 @@ def _check_step(errors: _Errors, where: str, step: Any, pinmap: PinMap) -> None:
         _check_pin(errors, where, "from", step.from_pin, "gpio", pinmap)
         _check_pin(errors, where, "to", step.to_pin, "timer_capture", pinmap)
         errors.range(where, "timeout_ms", step.timeout_ms, 1, 10000)
+        line = _edge_line(step.from_pin, pinmap)
+        if (
+            step.from_pin != step.to_pin
+            and line is not None
+            and line == _edge_line(step.to_pin, pinmap)
+        ):
+            errors.append(_shared_line(where, step.from_pin, step.to_pin, line))
     elif isinstance(step, LogicTraceStep):
         _check_pin(errors, where, "traced", step.pin, "gpio", pinmap)
         errors.range(where, "window_ms", step.window_ms, 1, 10000)
@@ -157,21 +169,122 @@ def _check_baud(errors: _Errors, where: str, baud: int) -> None:
         )
 
 
-def _check_concurrency(errors: _Errors, plan: Plan) -> None:
+def _edge_line(pin: str, pinmap: PinMap) -> int | None:
+    """The STM32 edge-interrupt line of a wired pin: its pin number (PB3 -> 3)."""
+    stm32 = pinmap.pins[pin].stm32 if pinmap.has(pin) else ""
+    if len(stm32) >= 3 and stm32[0] == "P" and stm32[1].isalpha() and stm32[2:].isdigit():
+        return int(stm32[2:])
+    return None
+
+
+def _shared_line(where: str, a: str, b: str, line: int) -> str:
+    return (
+        f"{where}: pins {a} and {b} share STM32 edge-interrupt line {line}, so the measuring "
+        "board cannot watch both at once."
+    )
+
+
+def _pins_used(step: MeasureBase, pinmap: PinMap) -> list[str]:
+    if isinstance(step, EdgeDelayStep):
+        return list(dict.fromkeys([step.from_pin, step.to_pin]))
+    if isinstance(step, UartReadStep):
+        return pinmap.pins_with("uart_rx")
+    pin = getattr(step, "pin", None)
+    return [pin] if pin else []
+
+
+def _check_group(
+    errors: _Errors, group: list[int], stim_i: int, plan: Plan, pinmap: PinMap
+) -> None:
+    """Measurements armed together before one stimulus, as the firmware's ARM allows."""
+    steps, stimulus = plan.steps, plan.steps[stim_i]
+    if len(group) > MAX_ARMED:
+        errors.append(
+            f"{_label(steps[group[0]], group[0])}: {len(group)} concurrent measure steps run "
+            f"before {_label(stimulus, stim_i)}, but the measuring board runs at most "
+            f"{MAX_ARMED} at once."
+        )
+    kinds: dict[str, str] = {}
+    pins: dict[str, str] = {}  # pin -> step that measures it
+    lines: dict[int, tuple[str, str]] = {}  # edge-interrupt line -> (pin, step)
+    for i in group:
+        step, where = steps[i], _label(steps[i], i)
+        if step.primitive not in ARMABLE:
+            errors.append(
+                f"{where}: primitive '{step.primitive}' cannot run concurrently with a "
+                f"stimulus; only {', '.join(ARMABLE)} can."
+            )
+        if step.primitive in kinds:
+            errors.append(
+                f"{where}: {kinds[step.primitive]} already runs a '{step.primitive}' "
+                "measurement before the same stimulus, and the measuring board runs one of "
+                "each kind at a time."
+            )
+        kinds.setdefault(step.primitive, where)
+        used = _pins_used(step, pinmap)
+        for pin in used:
+            if pin in pins:
+                errors.append(
+                    f"{where}: pin {pin} is already measured by {pins[pin]} before the same "
+                    "stimulus; concurrent measurements cannot share a pin."
+                )
+            elif isinstance(step, EdgeDelayStep | LogicTraceStep):
+                line = _edge_line(pin, pinmap)
+                other = lines.get(line) if line is not None else None
+                if other and other[1] != where:
+                    errors.append(_shared_line(where, pin, other[0], line))
+        for pin in used:
+            pins.setdefault(pin, where)
+            if (
+                isinstance(step, EdgeDelayStep | LogicTraceStep)
+                and (line := _edge_line(pin, pinmap)) is not None
+            ):
+                lines.setdefault(line, (pin, where))
+        uart_send = isinstance(stimulus, UartSendStep)
+        if uart_send and isinstance(step, UartReadStep) and step.baud != stimulus.baud:
+            errors.append(
+                f"{where}: reads at {step.baud} baud while {_label(stimulus, stim_i)} sends "
+                f"at {stimulus.baud} baud, but the measuring board's UART has one baud."
+            )
+
+
+def _check_concurrency(errors: _Errors, plan: Plan, pinmap: PinMap) -> None:
     steps = plan.steps
-    for i, step in enumerate(steps):
-        if not (is_measure(step) and step.concurrent_with_next):
+    stimulus_of: dict[int, Any] = {}  # concurrent measure step index -> its stimulus step
+    i = 0
+    while i < len(steps):
+        if not (is_measure(steps[i]) and steps[i].concurrent_with_next):
+            i += 1
             continue
-        j = i + 1
+        j = i
         while j < len(steps) and is_measure(steps[j]) and steps[j].concurrent_with_next:
             j += 1
+        group = list(range(i, j))
         if j >= len(steps) or not isinstance(steps[j], STIMULUS_TYPES):
             what = "the end of the plan" if j >= len(steps) else _label(steps[j], j)
-            errors.append(
-                f"{_label(step, i)}: concurrent_with_next is set, but it is followed by {what}; "
-                "it must be followed by a stimulus step (drive, uart_send or dac_set), "
-                "optionally after other concurrent measure steps."
-            )
+            for k in group:
+                errors.append(
+                    f"{_label(steps[k], k)}: concurrent_with_next is set, but it is followed by "
+                    f"{what}; it must be followed by a stimulus step (drive, uart_send or "
+                    "dac_set), optionally after other concurrent measure steps."
+                )
+        else:
+            stimulus_of.update({k: steps[j] for k in group})
+            _check_group(errors, group, j, plan, pinmap)
+        i = j
+
+    # A delay from a pin the rig drives can only start when the rig drives that pin.
+    for i, step in enumerate(steps):
+        if isinstance(step, EdgeDelayStep) and "drive" in pinmap.caps(step.from_pin):
+            stim = stimulus_of.get(i)
+            if not (isinstance(stim, DRIVE_TYPES) and stim.pin == step.from_pin):
+                errors.append(
+                    f"{_label(step, i)}: from_pin {step.from_pin} is driven by the measuring "
+                    "board, so this delay only starts when the board drives it; set "
+                    "concurrent_with_next: true and put a drive step on "
+                    f"{step.from_pin} right after this measure step (and any other "
+                    "concurrent ones)."
+                )
 
 
 def validate_plan(plan: Plan, pinmap: PinMap) -> list[str]:
@@ -194,5 +307,5 @@ def validate_plan(plan: Plan, pinmap: PinMap) -> list[str]:
         if is_measure(step):
             _check_expectations(errors, where, step)
 
-    _check_concurrency(errors, plan)
+    _check_concurrency(errors, plan, pinmap)
     return list(errors)

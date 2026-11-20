@@ -61,7 +61,7 @@ def _verdicts(report: Report) -> set[Verdict]:
 
 def test_handshake_ok(pinmap, rig_profile) -> None:
     report, flasher, _ = _button(pinmap, rig_profile)
-    assert _tx(report)[:2] == ["PING", "RESET"]
+    assert _tx(report)[:3] == ["PING", "DRIVE D2 RELEASE", "RESET"]
     assert flasher.calls == 1
     assert _verdicts(report) == {Verdict.PASS}
     assert report.rig_faults == [] and report.rig_warnings == []
@@ -137,7 +137,7 @@ def test_lost_first_ping_reply_is_retried(pinmap, rig_profile) -> None:
         pinmap=pinmap,
         clock=clock,
     )
-    assert device.received[:4] == ["PING", "PING", "PING", "RESET"]  # lost, resync, retry
+    assert device.received[:5] == ["PING", "PING", "PING", "DRIVE D2 RELEASE", "RESET"]  # retry
     assert _verdicts(report) == {Verdict.PASS}
     assert report.rig_faults == ["resync after timeout on 'PING': the board answered PING"]
 

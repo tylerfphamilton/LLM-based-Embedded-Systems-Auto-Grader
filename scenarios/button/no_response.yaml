@@ -1,5 +1,6 @@
 submission: button_no_response
 assignment: button_toggle
+sketch: benchmark/button_toggle/no_response
 description: Reads the wrong pin, so the LED never changes and nothing is printed. A valid "nothing happened" measurement.
 ground_truth: { faulty: true, fault: no_response }
 responses:

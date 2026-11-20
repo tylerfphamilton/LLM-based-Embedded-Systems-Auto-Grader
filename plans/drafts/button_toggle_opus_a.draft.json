@@ -1,0 +1,245 @@
+{
+  "schema_version": "0.1",
+  "assignment": "button_toggle_opus_a",
+  "description": "Debounced button toggle: button on D2 (active low, INPUT_PULLUP) toggles the LED on D13 once per press, even with contact bounce, and prints ON/OFF on Serial1 at 9600 baud.",
+  "setup": {
+    "reset": true,
+    "boot_wait_ms": 1000
+  },
+  "assumptions": [
+    "The handout does not give a number for 'quickly', so the LED must react within 100 ms of the first press edge, which most users would not notice.",
+    "A bouncy press or release is simulated as 5 edges 200 us apart, ending at the final level.",
+    "Each line printed on Serial1 may end with either CRLF (println) or LF.",
+    "Releasing the button must not toggle the LED or print anything; only presses toggle."
+  ],
+  "steps": [
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release"
+    },
+    {
+      "op": "measure",
+      "id": "off_after_reset",
+      "requirement": "The LED is off after reset and stays off while the button is not pressed.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 1000,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press1_led",
+      "requirement": "The first bouncy press turns the LED on within 100 ms, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "any",
+      "timeout_ms": 1000,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "not_null",
+          "field": "delay_ms"
+        },
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 100
+        },
+        {
+          "op": "eq",
+          "field": "to_edge_count",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press1_serial",
+      "requirement": "The first press prints exactly one line ON on Serial1 at 9600 baud.",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 1000,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "matches",
+          "field": "text",
+          "value": "^ON\\r?\\n$"
+        },
+        {
+          "op": "eq",
+          "field": "framing_errors",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 5,
+      "interval_us": 200,
+      "final_level": "low"
+    },
+    {
+      "op": "measure",
+      "id": "release1_led",
+      "requirement": "Releasing the button (with bounce) does not change the LED; it stays on.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 500,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "release1_serial",
+      "requirement": "Releasing the button prints nothing on Serial1.",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 500,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "byte_count",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 5,
+      "interval_us": 200,
+      "final_level": "high"
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release"
+    },
+    {
+      "op": "wait",
+      "ms": 200
+    },
+    {
+      "op": "measure",
+      "id": "press2_led",
+      "requirement": "The second bouncy press turns the LED off within 100 ms, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "any",
+      "timeout_ms": 1000,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "not_null",
+          "field": "delay_ms"
+        },
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 100
+        },
+        {
+          "op": "eq",
+          "field": "to_edge_count",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press2_serial",
+      "requirement": "The second press prints exactly one line OFF on Serial1 at 9600 baud.",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 1000,
+      "concurrent_with_next": true,
+      "expect": [
+        {
+          "op": "matches",
+          "field": "text",
+          "value": "^OFF\\r?\\n$"
+        },
+        {
+          "op": "eq",
+          "field": "framing_errors",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 5,
+      "interval_us": 200,
+      "final_level": "low"
+    },
+    {
+      "op": "measure",
+      "id": "press2_final",
+      "requirement": "After the second press the LED stays off.",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 300,
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release"
+    }
+  ],
+  "not_graded": [
+    {
+      "requirement": "Implement debouncing in software, without blocking delay() calls.",
+      "reason": "How the debouncing is done in code can't be seen from the pins; only its effect (one toggle per bouncy press) is graded."
+    },
+    {
+      "requirement": "Comment your code.",
+      "reason": "Code style and comments can't be measured electrically."
+    }
+  ]
+}

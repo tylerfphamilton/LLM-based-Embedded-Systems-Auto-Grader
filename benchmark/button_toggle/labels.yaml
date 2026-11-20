@@ -1,0 +1,9 @@
+# Ground truth for metrics only; the LLM never sees this file.
+correct:            { faulty: false }
+correct_alt_style:  { faulty: false }
+no_debounce:        { faulty: true, fault: no_debounce }
+no_response:        { faulty: true, fault: no_response }
+too_slow:           { faulty: true, fault: too_slow }
+wrong_baud:         { faulty: true, fault: wrong_baud }
+toggle_on_release:  { faulty: true, fault: toggle_on_release }
+usb_serial:         { faulty: true, fault: usb_serial }

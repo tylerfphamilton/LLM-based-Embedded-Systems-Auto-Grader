@@ -27,6 +27,19 @@ Rig timing (measured on the real rig):
   output must start "shortly after reset": anything measured earlier sees the board
   still booting, not the student's code.
 
+Stimuli and concurrent measurements (how the measuring board works):
+- `release` lets the student's own pull-up or pull-down set the pin. For an active-low
+  button with `INPUT_PULLUP`, "not pressed" is `release`, never `high`: driving it high
+  would hide a sketch that forgot the pull-up.
+- A bouncy press is `bounce` from a released pin with an odd `count` (for example 5 at
+  200 µs) ending at the pressed level. An even count adds an extra edge at the start.
+- Measure steps marked `concurrent_with_next` start together, the one step right after
+  them runs, and then all of them are collected before any later step. So each window or
+  timeout must cover the whole response to that stimulus.
+- At most 4 measurements run together, each of a different primitive and on different
+  pins. An `edge_delay` whose `from_pin` the board drives must be concurrent with a drive
+  step on that pin.
+
 Default tolerances, used only when the handout gives none (handout values always win):
 - Frequency, period and other timing values: `approx` with `tol_pct: 2`.
 - Duty cycle: `approx` with `tol_abs: 1` (percentage points).

@@ -95,3 +95,91 @@ def test_check_ids_disambiguate_repeated_fields() -> None:
 def test_committed_schema_is_fresh() -> None:
     committed = (ROOT / "schemas" / "plan.schema.json").read_text(encoding="utf-8")
     assert committed == export_schema(), "run: grader export-schema"
+
+
+# --- concurrent measurements: what the firmware's ARM accepts (docs/protocol.md) ---------
+
+LED_DELAY = {
+    "op": "measure", "id": "led", "requirement": "r", "primitive": "edge_delay",
+    "from_pin": "D2", "from_edge": "falling", "to_pin": "D13", "to_edge": "any",
+    "timeout_ms": 100, "expect": [{"field": "delay_ms", "op": "le", "value": 20}],
+}  # fmt: skip
+TRACE_D13 = {
+    "op": "measure", "id": "trace", "requirement": "r", "primitive": "logic_trace",
+    "pin": "D13", "window_ms": 200, "expect": [{"field": "edge_count", "op": "eq", "value": 1}],
+}  # fmt: skip
+UART_ON = {
+    "op": "measure", "id": "msg", "requirement": "r", "primitive": "uart_read",
+    "baud": 9600, "window_ms": 200, "expect": [{"field": "text", "op": "contains", "value": "ON"}],
+}  # fmt: skip
+PRESS = {"op": "drive", "pin": "D2", "action": "bounce", "count": 5, "interval_us": 200,
+         "final_level": "low"}  # fmt: skip
+
+
+def _errors(steps: list[dict], pinmap) -> list[str]:
+    raw = {"schema_version": "0.1", "assignment": "t", "description": "x", "steps": steps}
+    return validate_plan(parse_plan(raw), pinmap)
+
+
+def _armed(step: dict, sid: str | None = None) -> dict:
+    return {**step, "concurrent_with_next": True, **({"id": sid} if sid else {})}
+
+
+def test_button_style_group_is_valid(pinmap) -> None:
+    assert _errors([_armed(LED_DELAY), _armed(UART_ON), PRESS], pinmap) == []
+
+
+def test_concurrent_measurements_cannot_share_a_pin(pinmap) -> None:
+    (err,) = _errors([_armed(LED_DELAY), _armed(TRACE_D13), PRESS], pinmap)
+    assert "step 'trace': pin D13 is already measured by step 'led'" in err
+
+
+def test_one_measurement_of_each_kind_per_group(pinmap) -> None:
+    errors = _errors([_armed(UART_ON), _armed(UART_ON, "msg2"), PRESS], pinmap)
+    assert any("step 'msg2': step 'msg' already runs a 'uart_read'" in e for e in errors), errors
+
+
+def test_uart_send_baud_must_match_an_armed_read(pinmap) -> None:
+    send = {"op": "uart_send", "baud": 115200, "data": "hi"}
+    (err,) = _errors([_armed(UART_ON), send], pinmap)
+    assert "reads at 9600 baud while step #2 (uart_send) sends at 115200 baud" in err
+
+
+def test_at_most_four_concurrent_measurements(pinmap) -> None:
+    freq = {
+        "op": "measure", "id": "f", "requirement": "r", "primitive": "freq_duty", "pin": "D5",
+        "window_ms": 100, "expect": [{"field": "edge_count", "op": "ge", "value": 1}],
+    }  # fmt: skip
+    trace = {**TRACE_D13, "pin": "D5"}
+    group = [_armed(LED_DELAY), _armed(UART_ON), _armed(freq), _armed(trace), _armed(UART_ON, "m2")]
+    errors = _errors([*group, PRESS], pinmap)
+    assert any("5 concurrent measure steps" in e and "at most 4" in e for e in errors), errors
+
+
+def test_only_armable_primitives_run_concurrently(pinmap) -> None:
+    adc = {
+        "op": "measure", "id": "adc", "requirement": "r", "primitive": "analog_read", "pin": "A0",
+        "samples": 10, "expect": [{"field": "mean_mv", "op": "le", "value": 100}],
+    }  # fmt: skip
+    errors = _errors([_armed(adc), PRESS], pinmap)
+    assert any("primitive 'analog_read' cannot run concurrently" in e for e in errors), errors
+
+
+def test_delay_from_a_driven_pin_needs_that_drive_next(pinmap) -> None:
+    fix = "from_pin D2 is driven by the measuring board"
+    assert any(fix in e for e in _errors([LED_DELAY, PRESS], pinmap))  # not concurrent
+    send = {"op": "uart_send", "baud": 9600, "data": "hi"}
+    assert any(fix in e for e in _errors([_armed(LED_DELAY), send], pinmap))  # wrong stimulus
+    # A delay that starts on a student output (D13 high time) needs no drive.
+    high_time = {**LED_DELAY, "from_pin": "D13", "from_edge": "rising", "to_edge": "falling"}
+    assert _errors([high_time], pinmap) == []
+
+
+def test_pins_sharing_an_edge_interrupt_line(pinmap) -> None:
+    shared = pinmap.model_copy(deep=True)
+    shared.pins["D5"].stm32 = "PA3"  # same line as D13 (PB3)
+    errors = _errors([_armed(LED_DELAY), _armed({**TRACE_D13, "pin": "D5"}), PRESS], shared)
+    assert any("pins D5 and D13 share STM32 edge-interrupt line 3" in e for e in errors), errors
+    delay = {**LED_DELAY, "from_pin": "D5", "from_edge": "rising"}
+    assert any("pins D5 and D13 share" in e for e in _errors([delay], shared))
+    assert _errors([_armed(LED_DELAY), _armed({**TRACE_D13, "pin": "D5"}), PRESS], pinmap) == []

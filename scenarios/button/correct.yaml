@@ -1,5 +1,6 @@
 submission: button_correct
 assignment: button_toggle
+sketch: benchmark/button_toggle/correct
 description: Reference solution. Debounced, LED toggles in about 4 ms, prints ON then OFF at 9600 baud.
 ground_truth: { faulty: false }
 noise: { seed: 42, fields: { delay_ms: { abs: 0.05 } } }

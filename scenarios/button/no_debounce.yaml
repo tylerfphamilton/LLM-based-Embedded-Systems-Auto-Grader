@@ -1,5 +1,6 @@
 submission: button_no_debounce
 assignment: button_toggle
+sketch: benchmark/button_toggle/no_debounce
 description: No debouncing. Each of the 5 bounce edges toggles the LED and prints a message.
 ground_truth: { faulty: true, fault: no_debounce }
 responses:

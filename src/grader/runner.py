@@ -28,6 +28,7 @@ from grader.protocol import (
     Collect,
     Command,
     Debug,
+    DriveLevel,
     Err,
     Ok,
     Ping,
@@ -171,6 +172,11 @@ def _all_checks(plan: Plan, verdict: Verdict, reason: str) -> list[CheckResult]:
     return out
 
 
+def wired_drive_pins(pinmap: PinMap) -> list[str]:
+    """Pins the measuring board can drive and that are wired (not TBD in the pin map)."""
+    return [p for p in pinmap.pins_with("drive") if pinmap.pins[p].stm32.upper().startswith("P")]
+
+
 def handshake(rig: RigClient, pinmap: PinMap) -> tuple[str | None, str | None]:
     """PING the board on connect. Returns (problem, warning); a problem means don't grade."""
     host_hash = pinmap_hash(pinmap)
@@ -312,6 +318,10 @@ def run(
             faults.append(reason)
     else:
         try:
+            # The previous plan may have left a pin driven (e.g. a button still pressed),
+            # and RESET doesn't release it, so this sketch would boot with it. Release first.
+            for pin in wired_drive_pins(pinmap):
+                rig.request(DriveLevel(pin, "release"))
             if plan.setup.reset:
                 rig.request(Reset())
             if plan.setup.boot_wait_ms > 0:
