@@ -124,6 +124,11 @@ def test_same_value() -> None:
     assert same_value("500 Hz", 500.04) and same_value("500", 500) and same_value(" 25.1%", 25.1)
     assert not same_value("about 500 Hz", 500) and not same_value("750 Hz", 500)
     assert not same_value("500", "500 Hz")  # text values still need exact equality
+    spam = "\nOFF\r\nOFF\r\nON\r\nON\r\nON\r\nON\r\nON"
+    assert same_value("\nOFF\r\nOFF\r\nON\r\n...(repeated)", spam)  # abbreviated long text
+    assert same_value("OFF\r\nON\u2026", spam) and not same_value("OFF\r\nOFF\r\nOFF...", spam)
+    assert not same_value("ON...", spam)  # too short to count as an excerpt
+    assert not same_value("OFF\r\nOFF", spam)  # without "..." it must be exact
 
 
 @pytest.mark.parametrize(

@@ -137,17 +137,23 @@ def _is_num(x: Any) -> bool:
 
 
 _LEADING_NUMBER = re.compile(r"\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)")
+_ELLIPSIS = re.compile(r"(\.\.\.|\u2026).*\Z", re.S)  # "..." or an ellipsis character, and the rest
+MIN_EXCERPT = 4  # characters an abbreviated text citation must keep
 
 
 def same_value(cited: Any, actual: Any) -> bool:
     """Numbers equal to 3 significant figures; anything else must be equal. A cited
-    string with a leading number ("500 Hz") counts as that number."""
+    string with a leading number ("500 Hz") counts as that number. A long text may be cited
+    abbreviated: the part before a "..." must then appear in the actual text."""
     if isinstance(cited, str) and _is_num(actual) and (m := _LEADING_NUMBER.match(cited)):
         cited = float(m.group(1))
     if _is_num(cited) and _is_num(actual):
         return float(f"{cited:.3g}") == float(f"{actual:.3g}")
     if _is_num(cited) or _is_num(actual):
         return False
+    if isinstance(cited, str) and isinstance(actual, str) and _ELLIPSIS.search(cited):
+        excerpt = _ELLIPSIS.sub("", cited)
+        return cited == actual or (len(excerpt) >= MIN_EXCERPT and excerpt in actual)
     return cited == actual
 
 

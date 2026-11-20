@@ -7,3 +7,12 @@ too_slow:           { faulty: true, fault: too_slow }
 wrong_baud:         { faulty: true, fault: wrong_baud }
 toggle_on_release:  { faulty: true, fault: toggle_on_release }
 usb_serial:         { faulty: true, fault: usb_serial }
+submission_01:      { faulty: true, fault: reports_old_state }
+submission_02:      { faulty: true, fault: missing_newline }
+submission_03:      { faulty: true, fault: led_polarity_inverted }
+submission_04:      { faulty: true, fault: debounce_never_settles }
+submission_05:      { faulty: true, fault: debounce_units_us }
+submission_06:      { faulty: true, fault: repeats_while_held }
+submission_07:      { faulty: true, fault: release_bounce_toggles }
+submission_08:      { faulty: true, fault: no_pullup }
+submission_09:      { faulty: true, fault: serial_spam }
