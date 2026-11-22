@@ -1,0 +1,678 @@
+{
+  "prompt_version": "2eeebd65",
+  "ok": true,
+  "errors": [],
+  "notes": [
+    "attempt 1: plan was nested under 'plan'; unwrapped it"
+  ],
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Write the test plan for assignment `button_toggle_opus_c`.\n\n<handout>\n# Lab 4: Debounced button toggle (mock handout)\n\n> Mock handout written for testing `grader make-plan`. It is not an official course\n> document.\n\n## Goal\n\nUse a push button to toggle an LED, and report each change over a serial port.\n\n## Hardware\n\n* A push button between pin **D2** and GND. There is no external resistor, so use the\n  internal pull-up (`INPUT_PULLUP`). The button reads LOW while pressed.\n* The on-board LED on pin **D13**.\n* **Serial1** (pins D0/D1), not the USB `Serial` port, at **9600 baud**.\n\n## Requirements\n\n1. The LED is **off** after reset.\n2. Each press of the button toggles the LED: the first press turns it on, the next one\n   turns it off, and so on.\n3. The LED must react **quickly**: a user should not notice any delay.\n4. Real buttons bounce. One press must toggle the LED exactly **once**, no matter how\n   much the contacts bounce.\n5. On every toggle, print `ON` or `OFF` (the new state) on its own line on Serial1.\n6. Implement debouncing in software, without blocking `delay()` calls.\n7. Comment your code.\n\n## Submission\n\nSubmit your sketch folder.\n</handout>\n\n<pin_map>\n# Student board (Arduino Nano 33 BLE Sense) pin name -> measuring board (Nucleo-L476RG) pin.\n# Capabilities are from the MEASURING board's point of view (uart_rx = STM32 receives).\n#\n# !!! Every stm32 value is a PLACEHOLDER until verified in STM32CubeMX against the wiring. !!!\npins:\n  D5:  { stm32: PA0,  caps: [gpio, timer_capture] }   # Nucleo A0, TIM2_CH1 (FREQ)\n  D2:  { stm32: PA8,  caps: [gpio, drive] }           # Nucleo D7, via 1 kOhm; STM32 drives the student's button input\n  D13: { stm32: PB3,  caps: [gpio, timer_capture] }   # Nucleo D3, TIM2_CH2; Nano on-board LED\n  D1:  { stm32: PA10, caps: [uart_rx] }               # Nucleo D2, Nano Serial1 TX -> STM32 USART1 RX\n  D0:  { stm32: PA9,  caps: [uart_tx] }               # Nucleo D8, via 1 kOhm; Nano Serial1 RX <- STM32 USART1 TX\n  A0:  { stm32: TBD,  caps: [analog_in, dac] }        # placeholder; L476 DAC1_OUT1 is PA4\n  A4:  { stm32: TBD,  caps: [i2c_sda] }               # placeholder, STM32 acts as I2C target\n  A5:  { stm32: TBD,  caps: [i2c_scl] }               # placeholder\n  # Rig only, never used by a plan: open-drain line from the STM32 to the Nano's RST pin.\n  RST: { stm32: PA1,  caps: [reset] }                 # Nucleo A1 -> Nano RST (open-drain, pulled low to reset)\n</pin_map>\n\n<primitives>\nEach measurement primitive and the result fields it returns (type, unit, and when it is null):\n- freq_duty:\n    - frequency_hz: number, Hz; null if fewer than 2 rising edges (no signal)\n    - duty_pct: number, % of the period spent high (0-100); null if no signal\n    - edge_count: integer, rising edges in the window\n- edge_delay:\n    - delay_ms: number, ms from the first from_edge on from_pin to the first to_edge on to_pin; null if to_pin never changed within timeout_ms\n    - to_edge_count: integer, to_edge edges on to_pin from the trigger until timeout_ms\n- logic_trace:\n    - edge_count: integer, edges in either direction during the window\n    - final_level: integer, 0 (low) or 1 (high) at the end of the window\n    - edges_ms: list of numbers, ms of each edge from the start of the window\n- uart_read:\n    - text: string, the bytes received (undecodable bytes become U+FFFD)\n    - byte_count: integer, bytes received\n    - framing_errors: integer, bytes received with framing errors (e.g. wrong baud)\n- i2c_log:\n    - read_count: integer, read transactions\n    - write_count: integer, write transactions\n    - transactions: list of strings such as \"W:0x68:0x3B\" or \"R:0x68:0x3B:6\"\n- analog_read:\n    - mean_mv: number, mV\n    - min_mv: number, mV\n    - max_mv: number, mV\n</primitives>"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "signature": "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",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01SfPo3T861cXbZFBnPq3Md8",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "plan": {
+              "schema_version": "0.1",
+              "assignment": "button_toggle_opus_c",
+              "description": "Debounced push-button toggle of the D13 LED with ON/OFF reports on Serial1 at 9600 baud. Checks the LED is off at start, that bouncy presses toggle exactly once and quickly, that bouncy releases do not toggle, the serial messages, and the internal pull-up on D2.",
+              "setup": {
+                "reset": true,
+                "boot_wait_ms": 1000
+              },
+              "assumptions": [
+                "The handout gives no number for 'quickly', so the LED must change within 100 ms of the first press edge, which is about when people start to notice a delay.",
+                "Each press and the first release are bounced 7 times at 1 ms (7 ms of bounce) to check debouncing.",
+                "Serial lines may end in either \\n or \\r\\n (println style), and nothing else may be printed during a toggle.",
+                "The LED is active-high (HIGH = on), as with the Nano 33 BLE on-board LED on D13.",
+                "The 'exactly once' check counts every LED edge for 500 ms after the press, so a sketch that toggles again late is also caught."
+              ],
+              "steps": [
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "release"
+                },
+                {
+                  "op": "measure",
+                  "id": "led_off_at_start",
+                  "requirement": "The LED is off after reset and stays off while the button is not pressed.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 300,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 0
+                    },
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press1_toggle",
+                  "requirement": "The first bouncy press turns the LED on exactly once, within 100 ms.",
+                  "primitive": "edge_delay",
+                  "from_pin": "D2",
+                  "from_edge": "falling",
+                  "to_pin": "D13",
+                  "to_edge": "any",
+                  "timeout_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "not_null",
+                      "field": "delay_ms"
+                    },
+                    {
+                      "op": "le",
+                      "field": "delay_ms",
+                      "value": 100
+                    },
+                    {
+                      "op": "eq",
+                      "field": "to_edge_count",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press1_serial",
+                  "requirement": "After the first press the sketch prints ON on its own line on Serial1 at 9600 baud.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^ON\\r?\\n$"
+                    },
+                    {
+                      "op": "eq",
+                      "field": "framing_errors",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "bounce",
+                  "count": 7,
+                  "interval_us": 1000,
+                  "final_level": "low"
+                },
+                {
+                  "op": "measure",
+                  "id": "led_on_after_press1",
+                  "requirement": "The LED stays on after the first press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 100,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    },
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "release_no_toggle",
+                  "requirement": "Releasing the button, even with bounce, does not change the LED.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    },
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "release_no_print",
+                  "requirement": "Releasing the button prints nothing on Serial1.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "byte_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "bounce",
+                  "count": 7,
+                  "interval_us": 1000,
+                  "final_level": "high"
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "release"
+                },
+                {
+                  "op": "wait",
+                  "ms": 200
+                },
+                {
+                  "op": "measure",
+                  "id": "press2_toggle",
+                  "requirement": "The second bouncy press turns the LED off exactly once, within 100 ms.",
+                  "primitive": "edge_delay",
+                  "from_pin": "D2",
+                  "from_edge": "falling",
+                  "to_pin": "D13",
+                  "to_edge": "any",
+                  "timeout_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "not_null",
+                      "field": "delay_ms"
+                    },
+                    {
+                      "op": "le",
+                      "field": "delay_ms",
+                      "value": 100
+                    },
+                    {
+                      "op": "eq",
+                      "field": "to_edge_count",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press2_serial",
+                  "requirement": "After the second press the sketch prints OFF on its own line on Serial1.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^OFF\\r?\\n$"
+                    },
+                    {
+                      "op": "eq",
+                      "field": "framing_errors",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "bounce",
+                  "count": 7,
+                  "interval_us": 1000,
+                  "final_level": "low"
+                },
+                {
+                  "op": "measure",
+                  "id": "led_off_after_press2",
+                  "requirement": "The LED stays off after the second press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 100,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 0
+                    },
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "release"
+                },
+                {
+                  "op": "wait",
+                  "ms": 300
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "low"
+                },
+                {
+                  "op": "wait",
+                  "ms": 300
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "release"
+                },
+                {
+                  "op": "measure",
+                  "id": "pullup",
+                  "requirement": "The button pin uses the internal pull-up, so it reads HIGH when the button is not pressed.",
+                  "primitive": "logic_trace",
+                  "pin": "D2",
+                  "window_ms": 50,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    }
+                  ]
+                }
+              ],
+              "not_graded": [
+                {
+                  "requirement": "Implement debouncing in software, without blocking delay() calls.",
+                  "reason": "How the debouncing is coded can't be seen from the pins. Only how it behaves (one toggle per bouncy press) is graded."
+                },
+                {
+                  "requirement": "Comment your code.",
+                  "reason": "Code style and comments can't be measured electrically."
+                }
+              ]
+            }
+          },
+          "name": "submit_plan",
+          "type": "tool_use"
+        }
+      ]
+    }
+  ],
+  "responses": [
+    {
+      "id": "msg_011ChJYyNMS3cCAdJTiNK1Xe",
+      "container": null,
+      "content": [
+        {
+          "signature": "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",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01SfPo3T861cXbZFBnPq3Md8",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "plan": {
+              "schema_version": "0.1",
+              "assignment": "button_toggle_opus_c",
+              "description": "Debounced push-button toggle of the D13 LED with ON/OFF reports on Serial1 at 9600 baud. Checks the LED is off at start, that bouncy presses toggle exactly once and quickly, that bouncy releases do not toggle, the serial messages, and the internal pull-up on D2.",
+              "setup": {
+                "reset": true,
+                "boot_wait_ms": 1000
+              },
+              "assumptions": [
+                "The handout gives no number for 'quickly', so the LED must change within 100 ms of the first press edge, which is about when people start to notice a delay.",
+                "Each press and the first release are bounced 7 times at 1 ms (7 ms of bounce) to check debouncing.",
+                "Serial lines may end in either \\n or \\r\\n (println style), and nothing else may be printed during a toggle.",
+                "The LED is active-high (HIGH = on), as with the Nano 33 BLE on-board LED on D13.",
+                "The 'exactly once' check counts every LED edge for 500 ms after the press, so a sketch that toggles again late is also caught."
+              ],
+              "steps": [
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "release"
+                },
+                {
+                  "op": "measure",
+                  "id": "led_off_at_start",
+                  "requirement": "The LED is off after reset and stays off while the button is not pressed.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 300,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 0
+                    },
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press1_toggle",
+                  "requirement": "The first bouncy press turns the LED on exactly once, within 100 ms.",
+                  "primitive": "edge_delay",
+                  "from_pin": "D2",
+                  "from_edge": "falling",
+                  "to_pin": "D13",
+                  "to_edge": "any",
+                  "timeout_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "not_null",
+                      "field": "delay_ms"
+                    },
+                    {
+                      "op": "le",
+                      "field": "delay_ms",
+                      "value": 100
+                    },
+                    {
+                      "op": "eq",
+                      "field": "to_edge_count",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press1_serial",
+                  "requirement": "After the first press the sketch prints ON on its own line on Serial1 at 9600 baud.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^ON\\r?\\n$"
+                    },
+                    {
+                      "op": "eq",
+                      "field": "framing_errors",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "bounce",
+                  "count": 7,
+                  "interval_us": 1000,
+                  "final_level": "low"
+                },
+                {
+                  "op": "measure",
+                  "id": "led_on_after_press1",
+                  "requirement": "The LED stays on after the first press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 100,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    },
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "release_no_toggle",
+                  "requirement": "Releasing the button, even with bounce, does not change the LED.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    },
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "release_no_print",
+                  "requirement": "Releasing the button prints nothing on Serial1.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 300,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "byte_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "bounce",
+                  "count": 7,
+                  "interval_us": 1000,
+                  "final_level": "high"
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "release"
+                },
+                {
+                  "op": "wait",
+                  "ms": 200
+                },
+                {
+                  "op": "measure",
+                  "id": "press2_toggle",
+                  "requirement": "The second bouncy press turns the LED off exactly once, within 100 ms.",
+                  "primitive": "edge_delay",
+                  "from_pin": "D2",
+                  "from_edge": "falling",
+                  "to_pin": "D13",
+                  "to_edge": "any",
+                  "timeout_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "not_null",
+                      "field": "delay_ms"
+                    },
+                    {
+                      "op": "le",
+                      "field": "delay_ms",
+                      "value": 100
+                    },
+                    {
+                      "op": "eq",
+                      "field": "to_edge_count",
+                      "value": 1
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "id": "press2_serial",
+                  "requirement": "After the second press the sketch prints OFF on its own line on Serial1.",
+                  "primitive": "uart_read",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^OFF\\r?\\n$"
+                    },
+                    {
+                      "op": "eq",
+                      "field": "framing_errors",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "bounce",
+                  "count": 7,
+                  "interval_us": 1000,
+                  "final_level": "low"
+                },
+                {
+                  "op": "measure",
+                  "id": "led_off_after_press2",
+                  "requirement": "The LED stays off after the second press.",
+                  "primitive": "logic_trace",
+                  "pin": "D13",
+                  "window_ms": 100,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 0
+                    },
+                    {
+                      "op": "eq",
+                      "field": "edge_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "release"
+                },
+                {
+                  "op": "wait",
+                  "ms": 300
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "low"
+                },
+                {
+                  "op": "wait",
+                  "ms": 300
+                },
+                {
+                  "op": "drive",
+                  "pin": "D2",
+                  "action": "release"
+                },
+                {
+                  "op": "measure",
+                  "id": "pullup",
+                  "requirement": "The button pin uses the internal pull-up, so it reads HIGH when the button is not pressed.",
+                  "primitive": "logic_trace",
+                  "pin": "D2",
+                  "window_ms": 50,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "final_level",
+                      "value": 1
+                    }
+                  ]
+                }
+              ],
+              "not_graded": [
+                {
+                  "requirement": "Implement debouncing in software, without blocking delay() calls.",
+                  "reason": "How the debouncing is coded can't be seen from the pins. Only how it behaves (one toggle per bouncy press) is graded."
+                },
+                {
+                  "requirement": "Comment your code.",
+                  "reason": "Code style and comments can't be measured electrically."
+                }
+              ]
+            }
+          },
+          "name": "submit_plan",
+          "type": "tool_use"
+        }
+      ],
+      "diagnostics": null,
+      "model": "claude-opus-5-5",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "inference_geo": "global",
+        "input_tokens": 12131,
+        "output_tokens": 4029,
+        "output_tokens_details": {
+          "thinking_tokens": 1890
+        },
+        "service_tier": "standard",
+        "speed": "standard"
+      }
+    }
+  ]
+}
