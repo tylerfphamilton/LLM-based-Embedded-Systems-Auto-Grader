@@ -1110,6 +1110,15 @@
     "setup": {
       "$ref": "#/$defs/Setup"
     },
+    "params": {
+      "description": "Per-student values, written as {{name}} in text values and uart_send data.",
+      "items": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string"
+      },
+      "title": "Params",
+      "type": "array"
+    },
     "steps": {
       "items": {
         "discriminator": {

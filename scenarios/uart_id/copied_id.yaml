@@ -1,0 +1,27 @@
+submission: uart_id_copied_id
+assignment: uart_id
+description: Prints another student's ID (correct's 000412387) and the values derived from it.
+ground_truth: { faulty: true, fault: copied_id }
+params: { student_id: "000638205", digit_sum: 24, id_hex: "9BCFD" }
+responses:
+  - match: { cmd: UART, baud: 9600 }
+    replies:                       # one per READ: id_lf, sum, hex, id_crlf, unknown, id_again
+      - { text: "000412387\r\n", byte_count: 11, framing_errors: 0 }
+      - { text: "25\r\n", byte_count: 4, framing_errors: 0 }
+      - { text: "64AE3\r\n", byte_count: 7, framing_errors: 0 }
+      - { text: "000412387\r\n", byte_count: 11, framing_errors: 0 }
+      - { text: "ERR\r\n", byte_count: 5, framing_errors: 0 }
+      - { text: "000412387\r\n", byte_count: 11, framing_errors: 0 }
+expected_verdicts:
+  id_lf.text: FAIL
+  id_lf.framing_errors: PASS
+  sum.text: FAIL
+  sum.framing_errors: PASS
+  hex.text: FAIL
+  hex.framing_errors: PASS
+  id_crlf.text: FAIL
+  id_crlf.framing_errors: PASS
+  unknown.text: PASS
+  unknown.framing_errors: PASS
+  id_again.text: FAIL
+  id_again.framing_errors: PASS

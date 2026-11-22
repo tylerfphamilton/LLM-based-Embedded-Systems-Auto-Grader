@@ -514,3 +514,85 @@ Keeping push-pull means every press starts by driving D2 high, so the press dela
 always has its trigger edge, even without a pull-up (an open-drain rig would turn that check
 into ERROR). Open-drain D2 stays a fallback if generated plans skip the pull-up check. The
 button scenarios gained replies and verdicts for the two new traces.
+
+## Per-student values (params)
+
+**D63. Plans can hold per-student values ("params"), filled in per submission.** An
+assignment such as `uart_id` expects different text from every student (their own ID), so
+one fixed expected value cannot work.
+* A plan declares `params: [student_id, ...]` (optional, default empty; names match
+  `^[a-z][a-z0-9_]*$`). `schema_version` stays `"0.1"` because old plans stay valid.
+* A placeholder is `{{name}}`. Double braces never clash with regex quantifiers such as
+  `\d{3}`, and they need no templating library. Any `{{...}}` is recognised, so a
+  misspelt or upper-case name is reported as undeclared rather than silently kept.
+* **String fields only:** text expectation values (`eq`/`ne`/`contains`/`matches` on
+  `text`), `uart_send.data`, and the free text (`description`, `requirement`,
+  `assumptions`, `not_graded`). There is no numeric substitution, so a template is still
+  valid against the schema with its placeholders in place, and `validate-plan`,
+  `approve-plan` and the approval hash all work on the template file unchanged.
+* `validate.py` checks the template: every placeholder is declared, every declared param is
+  used, no placeholder sits in any other field (the message names the field), no param is
+  listed twice.
+* `plan.instantiate(plan, values)` dumps the plan, replaces placeholders in every string
+  (with `re.escape(value)` inside a `matches` value, the raw value elsewhere) and parses
+  the result again. A missing value raises `PlanError` naming the param. The filled-in
+  plan declares **no** params, so the runner's `validate_plan` treats it like a
+  hand-written plan (otherwise every param would be "declared but never used").
+* Values travel on `Submission.params` (excluded from hashing and equality), so the runner,
+  which instantiates, and the feedback, which redacts (D64), both read them from the one
+  object they already get. Sources: `DIR/params.yaml` for `batch --rig serial` (same keys
+  as `labels.yaml`; an entry without a folder is a warning), a scenario's `params:` for the
+  fake rig, and repeatable `--param NAME=VALUE` for `grader run`. With `run --rig fake`,
+  `--param` overrides the scenario's values. Integers become strings (values are only
+  ever substituted into text); booleans, floats and lists are rejected. Derived values
+  (`digit_sum`, `id_hex`) are worked out by the instructor; the grader never computes them.
+* A missing value is the instructor's mistake, not a student or rig fault. Every batch and
+  `grader run` checks all submissions first (`batch.require_params`) and exits 2 with
+  the list of submissions and the params they lack; nothing is graded, and the serial
+  batch checks before it opens the port. `--flash-only` does not grade, so it does not
+  need values. `report.json` records the values used (`params`); `report.md` does not
+  show them.
+* `make-plan --param-doc NAME="description"` (repeatable) lists the params in a
+  `<params>` block of the user message ("none" without any). The draft must declare
+  exactly those names, and a templated draft must also validate once filled in with
+  dummy values, so a `matches` value that only breaks after substitution goes back to the
+  repair loop. The plan prompt gained a short "Per-student values" section; it adds no
+  rule about `uart_send` + `uart_read` groups, which the existing concurrency text (D59)
+  already covers.
+
+**D64. Listed params are redacted from LLM requests.** The feedback request holds the
+student's code, the measured text and the expected values, and all three can contain the
+real ID.
+* `config/llm.yaml` `redact_params` (default `[student_id]`) names the params to hide.
+  Before the feedback call, each listed value, and its `re.escape` form as it appears in a
+  `matches` check, is replaced by `<name>` in the checks, the description, the command
+  log and the source code.
+* The cited-value check runs against the redacted check values. A model that cites the
+  real value cannot have read it from the data, so that item is dropped.
+* After the call the real value is put back into the accepted explanations and code
+  locations, so the student's report reads normally. `llm_feedback.json` (the saved request
+  and response) stays redacted.
+* Only listed params are redacted. Short derived values such as `digit_sum` = `25` would
+  match unrelated text (line numbers, delays), so they are sent as they are. A measured
+  value that is *another* student's ID (copied code) is not redacted either; only this
+  submission's own values are known.
+
+**D65. The `uart_id` assignment: no boot message, a flush line, and empty lines.**
+* **No boot message.** The runner starts reading only after setup (reset, then the
+  1000 ms boot wait of D57), and a read is a measurement armed by a step, so anything a
+  sketch prints in `setup()` is lost. The assignment leaves boot messages out (the handout
+  says to print nothing but replies). Checking one would need the firmware to start a
+  UART read before or during `RESET`; that is not built.
+* The plan starts with one unchecked `uart_send` of `"\n"` and a 200 ms wait, to flush
+  anything the Nano's receiver picked up when the rig first drove the line. The handout
+  therefore says to ignore empty lines. That also keeps a char-by-char parser that ends a
+  line on `\r` correct: the `\n` after it is an empty line, which gets no `ERR`.
+* Each command is one concurrent group: a 300 ms `uart_read` armed before a `uart_send`
+  at the same baud. "Reply promptly" has no number in the handout, so the plan records
+  300 ms as an assumption. Replies are checked with an exact-line regex
+  (`^{{student_id}}\r?\n$`) plus `framing_errors eq 0`. Commands: `ID?`, `SUM?`, `HEX?`
+  with `\n`, `ID?` with `\r\n`, an unknown command (`ERR`), and a last `ID?` that catches
+  sketches answering only once.
+* The ten benchmark sketches are still to be written (`benchmark/uart_id/README.md`);
+  `labels.yaml` and `params.yaml` use made-up IDs that start with `000`. Four fake-rig
+  scenarios (`correct`, `copied_id`, `ascii_sum`, `no_err`) have no `sketch:` link yet.

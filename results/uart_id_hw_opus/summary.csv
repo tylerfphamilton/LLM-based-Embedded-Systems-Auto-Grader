@@ -1,0 +1,11 @@
+assignment,submission,ground_truth_faulty,fault,pass,fail,borderline,error,flagged,llm_input_tokens,llm_output_tokens,llm_latency_s,llm_cost_usd,elapsed_s
+uart_id_opus,answers_once,true,answers_once,4,5,0,0,true,3415,956,9.798,0.016390,35.5
+uart_id_opus,ascii_sum,true,ascii_sum,8,1,0,0,true,3282,382,4.164,0.010384,27.2
+uart_id_opus,copied_id,true,copied_id,9,0,0,0,false,,,,,23.4
+uart_id_opus,correct,false,,9,0,0,0,false,,,,,22.9
+uart_id_opus,correct_alt_style,false,,9,0,0,0,false,,,,,23.0
+uart_id_opus,hex_lowercase,true,hex_lowercase,8,1,0,0,true,3148,398,5.036,0.010276,28.2
+uart_id_opus,lf_only,true,lf_only,6,3,0,0,true,3228,1186,11.834,0.018316,34.7
+uart_id_opus,no_err,true,no_err,8,1,0,0,true,3065,292,3.141,0.009050,26.0
+uart_id_opus,usb_serial,true,usb_serial,3,6,0,0,true,3634,929,7.402,0.016558,30.8
+uart_id_opus,wrong_baud,true,wrong_baud,3,6,0,0,true,3588,1210,9.936,0.019276,32.8

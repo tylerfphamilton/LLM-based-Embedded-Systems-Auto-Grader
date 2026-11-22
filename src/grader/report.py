@@ -86,6 +86,7 @@ class Report(BaseModel):
     finished_at: str
     rig: RigInfo
     flash: FlashInfo
+    params: dict[str, str] = Field(default_factory=dict)  # per-student values used (D63)
     assumptions: list[str] = Field(default_factory=list)
     rig_faults: list[str] = Field(default_factory=list)
     rig_warnings: list[str] = Field(default_factory=list)  # e.g. firmware too old to check

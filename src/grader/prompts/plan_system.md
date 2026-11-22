@@ -47,6 +47,14 @@ Stimuli and concurrent measurements (how the measuring board works):
   pins. An `edge_delay` whose `from_pin` the board drives must be concurrent with a drive
   step on that pin.
 
+Per-student values:
+- The user message lists the per-student values in `<params>`, or says none. Set `params`
+  to exactly the listed names, and use each one at least once.
+- Write a value as `{{name}}`, and only inside a text expectation's `value` (`eq`, `ne`,
+  `contains` or `matches` on `text`), in `uart_send.data`, or in free text. Never in
+  numbers, pins or ids. In a `matches` regex, `{{name}}` stands for the literal value (the
+  grader escapes it), so don't escape it yourself.
+
 Default tolerances, used only when the handout gives none (handout values always win):
 - Frequency, period and other timing values: `approx` with `tol_pct: 2`.
 - Duty cycle: `approx` with `tol_abs: 1` (percentage points).

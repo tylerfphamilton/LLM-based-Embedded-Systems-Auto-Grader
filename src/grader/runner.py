@@ -20,6 +20,7 @@ from grader.plan import (
     PlanError,
     RangeExpectation,
     check_ids,
+    instantiate,
     is_measure,
 )
 from grader.protocol import (
@@ -288,7 +289,10 @@ def run(
     clock: Clock | None = None,
     plan_warnings: list[str] | None = None,
 ) -> Report:
-    """Grade one submission. Raises PlanError if the plan is invalid."""
+    """Grade one submission. Raises PlanError if the plan is invalid, or if it declares a
+    param that ``submission.params`` has no value for."""
+    used_params = {p: submission.params[p] for p in plan.params if p in submission.params}
+    plan = instantiate(plan, submission.params)
     errors = validate_plan(plan, pinmap)
     if errors:
         raise PlanError(errors)
@@ -363,6 +367,7 @@ def run(
         flash=FlashInfo(
             ok=flash.ok, stage=flash.stage, student_fault=flash.student_fault, log=flash.log
         ),
+        params=used_params,
         assumptions=plan.assumptions,
         rig_faults=faults,
         rig_warnings=warnings,

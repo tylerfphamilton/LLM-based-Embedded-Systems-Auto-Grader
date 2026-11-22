@@ -10,6 +10,7 @@ from typing import Any
 
 from grader.pinmap import RIG_ONLY_CAPS, PinMap
 from grader.plan import (
+    PLACEHOLDER,
     PRIMITIVE_FIELDS,
     STIMULUS_TYPES,
     AnalogReadStep,
@@ -308,4 +309,70 @@ def validate_plan(plan: Plan, pinmap: PinMap) -> list[str]:
             _check_expectations(errors, where, step)
 
     _check_concurrency(errors, plan, pinmap)
+    _check_params(errors, plan)
     return list(errors)
+
+
+# ------------------------------------------------------------------ per-student params
+
+TEXT_VALUE_OPS = {"eq", "ne", "contains", "matches"}
+PLACEHOLDER_HOME = (
+    "placeholders are only allowed in text expectation values (eq, ne, contains or matches "
+    "on 'text'), in uart_send data, and in the description, requirement, assumptions and "
+    "not_graded texts"
+)
+
+
+def _strings(node: Any, path: tuple = ()) -> Any:
+    """Every string in a dumped plan, with its path, e.g. ("steps", 3, "expect", 0, "value")."""
+    if isinstance(node, str):
+        yield path, node
+    elif isinstance(node, list):
+        for i, x in enumerate(node):
+            yield from _strings(x, (*path, i))
+    elif isinstance(node, dict):
+        for k, v in node.items():
+            yield from _strings(v, (*path, k))
+
+
+def _placeholder_allowed(path: tuple, raw: dict) -> bool:
+    match path:
+        case ("description",) | ("assumptions", int()) | ("not_graded", int(), _):
+            return True
+        case ("steps", int(), "requirement"):
+            return True
+        case ("steps", int() as i, "data"):
+            return raw["steps"][i]["op"] == "uart_send"
+        case ("steps", int() as i, "expect", int() as j, "value"):
+            exp = raw["steps"][i]["expect"][j]
+            return exp["field"] in TEXT_FIELDS and exp["op"] in TEXT_VALUE_OPS
+    return False
+
+
+def _check_params(errors: _Errors, plan: Plan) -> None:
+    """``{{name}}`` placeholders: declared, used, and only inside string fields (D63)."""
+    for name in sorted({p for p in plan.params if plan.params.count(p) > 1}):
+        errors.append(f"params: '{name}' is listed more than once.")
+    raw = plan.model_dump(mode="json")
+    used: set[str] = set()
+    for path, text in _strings(raw):
+        names = PLACEHOLDER.findall(text)
+        if not names or path[:1] == ("params",):
+            continue
+        in_step = path[0] == "steps"
+        where = _label(plan.steps[path[1]], path[1]) if in_step else "plan"
+        rel = path[2:] if in_step else path
+        field = "".join(f"[{p}]" if isinstance(p, int) else f".{p}" for p in rel).lstrip(".")
+        shown = ", ".join("{{" + n + "}}" for n in names)
+        if not _placeholder_allowed(path, raw):
+            errors.append(f"{where}: field '{field}' contains {shown}, but {PLACEHOLDER_HOME}.")
+        for n in names:
+            if n in plan.params:
+                used.add(n)
+            else:
+                errors.append(
+                    f"{where}: placeholder {{{{{n}}}}} in '{field}' is not declared in 'params'."
+                )
+    for name in dict.fromkeys(plan.params):
+        if name not in used:
+            errors.append(f"params: '{name}' is declared but never used as {{{{{name}}}}}.")

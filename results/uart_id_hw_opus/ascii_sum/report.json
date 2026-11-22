@@ -1,0 +1,516 @@
+{
+  "report_version": "0.1",
+  "assignment": "uart_id_opus",
+  "plan_description": "Checks the Serial1 (9600 8N1) command responder: no start-up output, correctly formatted replies to ID?, SUM? and HEX? with both \\n and \\r\\n line endings, ERR for unknown commands, empty lines ignored, and that the sketch keeps answering.",
+  "plan_schema_version": "0.1",
+  "submission": "ascii_sum",
+  "started_at": "2026-11-22T21:01:36.323065+00:00",
+  "finished_at": "2026-11-22T21:02:03.542841+00:00",
+  "rig": {
+    "transport": "serial:COM5",
+    "flasher": "arduino-cli",
+    "profile": "nucleo-l476rg-draft"
+  },
+  "flash": {
+    "ok": true,
+    "stage": "done",
+    "student_fault": false,
+    "log": "Sketch uses 86120 bytes (8%) of program storage space. Maximum is 983040 bytes.\nGlobal variables use 44584 bytes (17%) of dynamic memory, leaving 217560 bytes for local variables. Maximum is 262144 bytes.\nDevice       : nRF52840-QIAA\nVersion      : Arduino Bootloader (SAM-BA extended) 2.0 [Arduino:IKXYZ]\nAddress      : 0x0\nPages        : 256\nPage Size    : 4096 bytes\nTotal Size   : 1024KB\nPlanes       : 1\nLock Regions : 0\nLocked       : none\nSecurity     : false\nErase flash\n\nDone in 0.001 seconds\nWrite 86128 bytes to flash (22 pages)\n\n[                              ] 0% (0/22 pages)\n[=                             ] 4% (1/22 pages)\n[==                            ] 9% (2/22 pages)\n[====                          ] 13% (3/22 pages)\n[=====                         ] 18% (4/22 pages)\n[======                        ] 22% (5/22 pages)\n[========                      ] 27% (6/22 pages)\n[=========                     ] 31% (7/22 pages)\n[==========                    ] 36% (8/22 pages)\n[============                  ] 40% (9/22 pages)\n[=============                 ] 45% (10/22 pages)\n[===============               ] 50% (11/22 pages)\n[================              ] 54% (12/22 pages)\n[=================             ] 59% (13/22 pages)\n[===================           ] 63% (14/22 pages)\n[====================          ] 68% (15/22 pages)\n[=====================         ] 72% (16/22 pages)\n[=======================       ] 77% (17/22 pages)\n[========================      ] 81% (18/22 pages)\n[=========================     ] 86% (19/22 pages)\n[===========================   ] 90% (20/22 pages)\n[============================  ] 95% (21/22 pages)\n[==============================] 100% (22/22 pages)\nDone in 3.636 seconds\nNew upload port: COM7 (serial)\n"
+  },
+  "params": {},
+  "assumptions": [
+    "No per-student ID values are provided, so replies are checked only for the format the handout gives (9 digits, 1-2 decimal digits, upper-case hex without leading zeros), not for the exact values.",
+    "The handout says 'promptly' without a time limit, so each reply must arrive completely within a 500 ms window after the command is sent.",
+    "A reply may end with either \\r\\n or \\n, as the handout allows.",
+    "The digit sum of a 9-digit ID is at most 81, so the SUM? reply is expected to have 1 or 2 digits.",
+    "A 9-digit ID is at most 999999999 = 0x3B9AC9FF, so the HEX? reply is expected to have 1 to 8 hex digits with no leading zero.",
+    "Start-up silence is checked by listening for 2000 ms after the boot wait before any command is sent."
+  ],
+  "rig_faults": [],
+  "rig_warnings": [],
+  "plan_warnings": [],
+  "checks": [
+    {
+      "id": "silent_boot.byte_count",
+      "step_id": "silent_boot",
+      "requirement": "The sketch prints nothing on Serial1 before it receives a command (no start-up message).",
+      "primitive": "uart_read",
+      "field": "byte_count",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "id_lf.text",
+      "step_id": "id_lf",
+      "requirement": "ID? ending in \\n gets your 9-digit ID (leading zeros kept) on one line.",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^[0-9]{9}\\r?\\n$",
+      "expected_text": "matches /^[0-9]{9}\\r?\\n$/",
+      "tolerance": null,
+      "measured": "000194726\r\n",
+      "verdict": "PASS",
+      "reason": "received \"000194726\\r\\n\"; expected matches /^[0-9]{9}\\r?\\n$/",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "id_lf.framing_errors",
+      "step_id": "id_lf",
+      "requirement": "ID? ending in \\n gets your 9-digit ID (leading zeros kept) on one line.",
+      "primitive": "uart_read",
+      "field": "framing_errors",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "id_crlf.text",
+      "step_id": "id_crlf",
+      "requirement": "ID? ending in \\r\\n also gets your 9-digit ID (the \\r is not part of the command).",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^[0-9]{9}\\r?\\n$",
+      "expected_text": "matches /^[0-9]{9}\\r?\\n$/",
+      "tolerance": null,
+      "measured": "000194726\r\n",
+      "verdict": "PASS",
+      "reason": "received \"000194726\\r\\n\"; expected matches /^[0-9]{9}\\r?\\n$/",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "sum_lf.text",
+      "step_id": "sum_lf",
+      "requirement": "SUM? gets the sum of your ID's digits as a decimal number on one line.",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^[0-9]{1,2}\\r?\\n$",
+      "expected_text": "matches /^[0-9]{1,2}\\r?\\n$/",
+      "tolerance": null,
+      "measured": "461\r\n",
+      "verdict": "FAIL",
+      "reason": "received \"461\\r\\n\", but expected matches /^[0-9]{1,2}\\r?\\n$/",
+      "feedback": "In setup(), idDigitSum is computed as `idDigitSum += studentId[i];` which adds the raw ASCII character codes of the ID string (e.g. '0' = 48) instead of the numeric digit values. This produces a much larger number (461 instead of a 1-2 digit sum) consistent with adding ASCII codes rather than digits; fix by subtracting '0' from each character, i.e. `idDigitSum += studentId[i] - '0';` at ascii_sum.ino:26.",
+      "code_location": "ascii_sum.ino:26",
+      "cause_found": true,
+      "same_cause_as": null
+    },
+    {
+      "id": "hex_crlf.text",
+      "step_id": "hex_crlf",
+      "requirement": "HEX? gets your ID in upper-case hex with no leading zeros on one line.",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^[1-9A-F][0-9A-F]{0,7}\\r?\\n$",
+      "expected_text": "matches /^[1-9A-F][0-9A-F]{0,7}\\r?\\n$/",
+      "tolerance": null,
+      "measured": "2F8A6\r\n",
+      "verdict": "PASS",
+      "reason": "received \"2F8A6\\r\\n\"; expected matches /^[1-9A-F][0-9A-F]{0,7}\\r?\\n$/",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "unknown.text",
+      "step_id": "unknown",
+      "requirement": "An unknown command gets the reply ERR.",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^ERR\\r?\\n$",
+      "expected_text": "matches /^ERR\\r?\\n$/",
+      "tolerance": null,
+      "measured": "ERR\r\n",
+      "verdict": "PASS",
+      "reason": "received \"ERR\\r\\n\"; expected matches /^ERR\\r?\\n$/",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "empty_line.byte_count",
+      "step_id": "empty_line",
+      "requirement": "Empty lines are ignored and get no reply.",
+      "primitive": "uart_read",
+      "field": "byte_count",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "repeat.text",
+      "step_id": "repeat",
+      "requirement": "The sketch keeps answering: a later ID? still gets your 9-digit ID.",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^[0-9]{9}\\r?\\n$",
+      "expected_text": "matches /^[0-9]{9}\\r?\\n$/",
+      "tolerance": null,
+      "measured": "000194726\r\n",
+      "verdict": "PASS",
+      "reason": "received \"000194726\\r\\n\"; expected matches /^[0-9]{9}\\r?\\n$/",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "not_graded.1",
+      "step_id": null,
+      "requirement": "Use your own university ID.",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "The grader does not know each student's ID, so it can only check the reply format, not the actual values or whether the three replies agree with each other.",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "not_graded.2",
+      "step_id": null,
+      "requirement": "Comment your code.",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "Code comments cannot be seen on the pins.",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    }
+  ],
+  "command_log": [
+    {
+      "t_ms": 0.035,
+      "dir": "tx",
+      "line": "PING"
+    },
+    {
+      "t_ms": 5.133,
+      "dir": "rx",
+      "line": "OK fw=\"0.1\" protocol=\"0.2\" pinmap=\"46b391a6\""
+    },
+    {
+      "t_ms": 5.198,
+      "dir": "note",
+      "line": "handshake: {'fw': '0.1', 'protocol': '0.2', 'pinmap': '46b391a6'}"
+    },
+    {
+      "t_ms": 16470.497,
+      "dir": "tx",
+      "line": "DRIVE D2 RELEASE"
+    },
+    {
+      "t_ms": 16473.526,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 16473.552,
+      "dir": "tx",
+      "line": "RESET"
+    },
+    {
+      "t_ms": 16486.03,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 16486.087,
+      "dir": "tx",
+      "line": "WAIT 1000"
+    },
+    {
+      "t_ms": 17488.748,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 17488.865,
+      "dir": "tx",
+      "line": "UART 9600 READ 2000"
+    },
+    {
+      "t_ms": 19497.206,
+      "dir": "rx",
+      "line": "OK text=\"\" byte_count=0 framing_errors=0"
+    },
+    {
+      "t_ms": 19497.384,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 19501.89,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 19501.99,
+      "dir": "tx",
+      "line": "UART 9600 SEND 49443F0A"
+    },
+    {
+      "t_ms": 19509.733,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 19509.785,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 20005.802,
+      "dir": "rx",
+      "line": "OK text=\"000194726%0D%0A\" byte_count=11 framing_errors=0"
+    },
+    {
+      "t_ms": 20006.022,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 20009.653,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 20009.723,
+      "dir": "tx",
+      "line": "UART 9600 SEND 49443F0D0A"
+    },
+    {
+      "t_ms": 20018.649,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 20018.681,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 20514.618,
+      "dir": "rx",
+      "line": "OK text=\"000194726%0D%0A\" byte_count=11 framing_errors=0"
+    },
+    {
+      "t_ms": 20514.788,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 20518.613,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 20518.657,
+      "dir": "tx",
+      "line": "UART 9600 SEND 53554D3F0A"
+    },
+    {
+      "t_ms": 20527.577,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 20527.61,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 21023.001,
+      "dir": "rx",
+      "line": "OK text=\"461%0D%0A\" byte_count=5 framing_errors=0"
+    },
+    {
+      "t_ms": 21023.145,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 21026.711,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 21026.79,
+      "dir": "tx",
+      "line": "UART 9600 SEND 4845583F0D0A"
+    },
+    {
+      "t_ms": 21036.694,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 21036.729,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 21531.042,
+      "dir": "rx",
+      "line": "OK text=\"2F8A6%0D%0A\" byte_count=7 framing_errors=0"
+    },
+    {
+      "t_ms": 21531.231,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 21535.029,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 21535.109,
+      "dir": "tx",
+      "line": "UART 9600 SEND 464F4F3F0D0A"
+    },
+    {
+      "t_ms": 21544.844,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 21544.902,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 22039.071,
+      "dir": "rx",
+      "line": "OK text=\"ERR%0D%0A\" byte_count=5 framing_errors=0"
+    },
+    {
+      "t_ms": 22039.204,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 22042.729,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 22042.797,
+      "dir": "tx",
+      "line": "UART 9600 SEND 0D0A0A"
+    },
+    {
+      "t_ms": 22048.863,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 22048.921,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 22545.731,
+      "dir": "rx",
+      "line": "OK text=\"\" byte_count=0 framing_errors=0"
+    },
+    {
+      "t_ms": 22545.894,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 22549.723,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 22549.766,
+      "dir": "tx",
+      "line": "UART 9600 SEND 49443F0A"
+    },
+    {
+      "t_ms": 22556.69,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 22556.719,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 23053.799,
+      "dir": "rx",
+      "line": "OK text=\"000194726%0D%0A\" byte_count=11 framing_errors=0"
+    }
+  ],
+  "summary": {
+    "total": 11,
+    "PASS": 8,
+    "FAIL": 1,
+    "BORDERLINE": 0,
+    "ERROR": 0,
+    "NOT_GRADED": 2
+  },
+  "llm": {
+    "model": "claude-sonnet-5",
+    "prompt_version": "171e5c48",
+    "input_tokens": 3282,
+    "output_tokens": 382,
+    "latency_s": 4.164,
+    "warnings": [],
+    "error": null
+  }
+}

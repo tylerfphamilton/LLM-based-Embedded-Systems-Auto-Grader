@@ -4,6 +4,7 @@ make-plan | approve-plan``."""
 from __future__ import annotations
 
 import contextlib
+import re
 import sys
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -12,7 +13,7 @@ from typing import Annotated
 
 import typer
 
-from grader.batch import format_table, grade_scenario, run_batch
+from grader.batch import format_table, grade_scenario, require_params, run_batch
 from grader.fake_rig import load_scenario
 from grader.feedback import FeedbackGenerator, LLMFeedback
 from grader.llm import (
@@ -23,7 +24,7 @@ from grader.llm import (
     require_api_key,
 )
 from grader.pinmap import load_pinmap
-from grader.plan import PlanError, export_schema, load_plan
+from grader.plan import PARAM_PATTERN, PlanError, export_schema, load_plan
 from grader.planner import (
     PLAN_PROMPT,
     approval_warnings,
@@ -109,6 +110,22 @@ def _plan_warnings(path: Path) -> list[str]:
     return warnings
 
 
+def _pairs_or_exit(items: list[str] | None, option: str) -> dict[str, str]:
+    """``NAME=VALUE`` options as a dict; a malformed one exits 2."""
+    out = {}
+    for item in items or []:
+        name, sep, value = item.partition("=")
+        if not sep or not re.fullmatch(PARAM_PATTERN, name):
+            typer.echo(
+                f"error: {option} {item!r}: expected NAME=VALUE with a lower-case name, "
+                "e.g. student_id=000412387",
+                err=True,
+            )
+            raise typer.Exit(2)
+        out[name] = value
+    return out
+
+
 def _print_errors(path: Path, errors: list[str]) -> None:
     typer.echo(f"{path}: {len(errors)} error(s)", err=True)
     for e in errors:
@@ -174,8 +191,13 @@ def run(
     profile: ProfileOpt = DEFAULT_PROFILE,
     feedback: FeedbackOpt = FeedbackKind.none,
     llm_config: LLMConfigOpt = DEFAULT_LLM_CONFIG,
+    param: Annotated[
+        list[str] | None,
+        typer.Option("--param", help="Per-student value NAME=VALUE (repeatable)."),
+    ] = None,
 ) -> None:
     """Grade one submission and write report.json + report.md to OUT/<submission>/."""
+    values = _pairs_or_exit(param, "--param")
     p = _load_plan_or_exit(plan, pinmap)
     fb = _feedback_or_exit(feedback, llm_config)
     warnings = _plan_warnings(plan)
@@ -184,19 +206,25 @@ def run(
         if scenario is None:
             raise typer.BadParameter("--rig fake needs --scenario", param_hint="--scenario")
         try:
+            sc = load_scenario(scenario)
+            require_params(p, {sc.submission: {**sc.params, **values}})
             report = grade_scenario(
-                p,
-                load_scenario(scenario),
-                pinmap=pm,
-                rig_profile=prof,
-                feedback=fb,
-                plan_warnings=warnings,
-            )
+                p, sc, pinmap=pm, rig_profile=prof, feedback=fb, plan_warnings=warnings,
+                params=values,
+            )  # fmt: skip
         except ValueError as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(2) from None
     else:
-        report = _run_serial(p, sketch, submission, port, board_port, pm, prof, warnings, fb)
+        sub_id = submission or (sketch.name if sketch else "")
+        try:
+            require_params(p, {sub_id: values})
+        except ValueError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2) from None
+        report = _run_serial(
+            p, sketch, submission, port, board_port, pm, prof, warnings, fb, values
+        )
     directory = out / report.submission
     json_path, md_path = write_reports(report, directory)
     typer.echo(_summary_line(report))
@@ -204,7 +232,7 @@ def run(
 
 
 def _run_serial(
-    plan, sketch, submission, port, board_port, pinmap, profile, warnings, feedback
+    plan, sketch, submission, port, board_port, pinmap, profile, warnings, feedback, values
 ) -> Report:
     from grader.flasher import ArduinoCliFlasher, Submission
     from grader.runner import run as run_plan
@@ -212,7 +240,7 @@ def _run_serial(
 
     if sketch is None:
         raise typer.BadParameter("--rig serial needs --sketch", param_hint="--sketch")
-    sub = Submission(submission or sketch.name, sketch)
+    sub = Submission(submission or sketch.name, sketch, params=values)
     try:
         transport = SerialTransport(port)
     except (TransportError, ImportError) as exc:
@@ -334,6 +362,7 @@ def _serial_batch(
         flash_only_batch,
         format_flash_table,
         load_labels,
+        load_params,
         run_serial_batch,
     )
     from grader.flasher import ArduinoCliFlasher
@@ -351,6 +380,12 @@ def _serial_batch(
         logs = out / "<submission>" / "flash.log"
         typer.echo(f"\nlogs: {logs}   summary: {out / 'flash_summary.csv'}")
         return
+    try:  # before the port is opened: a missing value is the instructor's to fix
+        params = load_params(folder)
+        require_params(p, {s.id: params.get(s.id, {}) for s in subs})
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from None
     fb = _feedback_or_exit(feedback, llm_config)
     cost = load_llm_config(llm_config).cost_usd if fb is not None else None
     warnings = _plan_warnings(plan_path)
@@ -373,6 +408,7 @@ def _serial_batch(
                 feedback=fb,
                 plan_warnings=warnings,
                 cost_usd=cost,
+                params=params,
             )
     except KeyboardInterrupt:
         typer.echo(f"\ninterrupted; partial summary: {out / 'summary.csv'}", err=True)
@@ -395,11 +431,18 @@ def make_plan_cmd(
     out_dir: Annotated[Path, typer.Option(help="Plans directory.")] = Path("plans"),
     dry_run: Annotated[bool, typer.Option(help="Print the first request; no API call.")] = False,
     force: Annotated[bool, typer.Option(help="Overwrite an approved meta file.")] = False,
+    param_doc: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--param-doc", help='Per-student value NAME="description" for the plan (repeatable).'
+        ),
+    ] = None,
 ) -> None:
     """Draft a test plan from a handout with the LLM (writes plans/drafts/<name>.draft.json)."""
+    docs = _pairs_or_exit(param_doc, "--param-doc")
     cfg = load_llm_config(llm_config)
     req = first_request(
-        name, handout.read_text(encoding="utf-8"), pinmap.read_text(encoding="utf-8"), cfg
+        name, handout.read_text(encoding="utf-8"), pinmap.read_text(encoding="utf-8"), cfg, docs
     )
     if dry_run:
         typer.echo(describe_request(req, load_prompt(PLAN_PROMPT)[1]))
@@ -416,7 +459,11 @@ def make_plan_cmd(
         cfg.check()
         require_api_key()
         result = generate_plan(
-            AnthropicClient.from_config(cfg), req, name=name, pinmap=load_pinmap(pinmap)
+            AnthropicClient.from_config(cfg),
+            req,
+            name=name,
+            pinmap=load_pinmap(pinmap),
+            params=list(docs),
         )
     except LLMError as exc:
         typer.echo(f"error: {exc}", err=True)

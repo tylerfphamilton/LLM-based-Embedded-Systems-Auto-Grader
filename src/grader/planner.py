@@ -32,6 +32,7 @@ from grader.plan import (
     Plan,
     PlanError,
     export_schema,
+    instantiate,
     parse_plan,
 )
 from grader.validate import validate_plan
@@ -61,21 +62,38 @@ def primitives_text() -> str:
     return "\n".join(lines)
 
 
-def user_message(name: str, handout: str, pinmap_yaml: str) -> str:
+def params_text(param_docs: dict[str, str]) -> str:
+    if not param_docs:
+        return "none"
+    lines = [f"- {{{{{n}}}}}: {doc}" for n, doc in param_docs.items()]
+    return "Per-student values the grader fills in for each submission:\n" + "\n".join(lines)
+
+
+def user_message(
+    name: str, handout: str, pinmap_yaml: str, param_docs: dict[str, str] | None = None
+) -> str:
     return (
         f"Write the test plan for assignment `{name}`.\n\n"
         f"<handout>\n{handout.strip()}\n</handout>\n\n"
         f"<pin_map>\n{pinmap_yaml.strip()}\n</pin_map>\n\n"
         f"<primitives>\nEach measurement primitive and the result fields it returns "
-        f"(type, unit, and when it is null):\n{primitives_text()}\n</primitives>"
+        f"(type, unit, and when it is null):\n{primitives_text()}\n</primitives>\n\n"
+        f"<params>\n{params_text(param_docs or {})}\n</params>"
     )
 
 
-def first_request(name: str, handout: str, pinmap_yaml: str, cfg: LLMConfig) -> LLMRequest:
+def first_request(
+    name: str,
+    handout: str,
+    pinmap_yaml: str,
+    cfg: LLMConfig,
+    param_docs: dict[str, str] | None = None,
+) -> LLMRequest:
     system, _ = load_prompt(PLAN_PROMPT)
+    content = user_message(name, handout, pinmap_yaml, param_docs)
     return LLMRequest(
         system=system,
-        messages=[{"role": "user", "content": user_message(name, handout, pinmap_yaml)}],
+        messages=[{"role": "user", "content": content}],
         tool=plan_tool(),
         model=cfg.planner_model,
         max_tokens=cfg.plan_max_tokens,
@@ -134,8 +152,11 @@ def unwrap_plan(raw: Any) -> tuple[Any, bool]:
     return raw, False
 
 
-def check_draft(raw: Any, name: str, pinmap: PinMap) -> list[str]:
-    """Every problem with an LLM plan, as plain sentences (empty = valid)."""
+def check_draft(
+    raw: Any, name: str, pinmap: PinMap, params: tuple[str, ...] | list[str] = ()
+) -> list[str]:
+    """Every problem with an LLM plan, as plain sentences (empty = valid). ``params`` are
+    the names given with ``--param-doc``; the plan must declare exactly those."""
     if not isinstance(raw, dict):
         return ["plan: the tool input is not a JSON object."]
     try:
@@ -145,6 +166,15 @@ def check_draft(raw: Any, name: str, pinmap: PinMap) -> list[str]:
     errors = validate_plan(plan, pinmap)
     if plan.assignment != name:
         errors.append(f"assignment: must be '{name}', not '{plan.assignment}'.")
+    if set(plan.params) != set(params):
+        want = ", ".join(params) or "none"
+        errors.append(f"params: must be exactly the given per-student values ({want}).")
+    elif not errors and plan.params:
+        # A matches regex must still compile, and validate, once values are filled in.
+        try:
+            errors = validate_plan(instantiate(plan, {p: "0" for p in plan.params}), pinmap)
+        except PlanError as exc:
+            errors = exc.errors
     return errors
 
 
@@ -155,6 +185,7 @@ def generate_plan(
     name: str,
     pinmap: PinMap,
     max_attempts: int = MAX_ATTEMPTS,
+    params: tuple[str, ...] | list[str] = (),
 ) -> PlanResult:
     """Ask for a plan; on errors reply with an ``is_error`` tool_result and ask again.
     An answer without a ``submit_plan`` call is retried the same way (it uses an attempt).
@@ -181,7 +212,7 @@ def generate_plan(
         raw, unwrapped = unwrap_plan(resp.tool_input)
         if unwrapped:
             notes.append(f"attempt {attempt}: plan was nested under 'plan'; unwrapped it")
-        errors = check_draft(raw, name, pinmap)
+        errors = check_draft(raw, name, pinmap, params)
         messages.append({"role": "assistant", "content": resp.raw.get("content", [])})
         if not errors:
             return PlanResult(True, raw, [], attempt, responses, messages, notes)

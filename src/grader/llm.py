@@ -73,6 +73,7 @@ class LLMConfig:
     force_tool: bool = False  # current models reject forced tool_choice (D37)
     price_input_per_mtok: float | None = None  # USD per million input tokens
     price_output_per_mtok: float | None = None  # USD per million output tokens
+    redact_params: tuple[str, ...] = ("student_id",)  # replaced by <name> before LLM calls
 
     def cost_usd(self, input_tokens: int, output_tokens: int) -> float | None:
         """List-price cost of one call, or None when prices are not configured."""
@@ -114,6 +115,7 @@ def load_llm_config(path: str | Path) -> LLMConfig:
         force_tool=bool(data.get("force_tool", False)),
         price_input_per_mtok=_opt_float(price.get("input")),
         price_output_per_mtok=_opt_float(price.get("output")),
+        redact_params=tuple(str(p) for p in data.get("redact_params", ["student_id"]) or []),
     )
 
 

@@ -9,7 +9,7 @@ import csv
 import sys
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,7 +20,7 @@ from grader.fake_rig import FakeDevice, GroundTruth, Scenario, load_scenario
 from grader.feedback import FeedbackGenerator
 from grader.flasher import Flasher, NoopFlasher, Submission
 from grader.pinmap import PinMap, pinmap_hash
-from grader.plan import Plan, is_measure
+from grader.plan import Plan, is_measure, param_values
 from grader.report import Report, write_reports
 from grader.rig_profile import RigProfile
 from grader.runner import run
@@ -42,11 +42,13 @@ def grade_scenario(
     feedback: FeedbackGenerator | None = None,
     plan_warnings: list[str] | None = None,
     repo_root: Path = Path("."),
+    params: dict[str, str] | None = None,
 ) -> Report:
     """Run ``plan`` against the FakeRig for one scenario, with simulated time.
 
     A scenario's ``sketch`` (relative to ``repo_root``) becomes the submission's sketch
     directory, so feedback can read the student code. The FakeRig never flashes it.
+    ``params`` override the scenario's own ``params`` (``grader run --param``).
     """
     if scenario.assignment is not None and scenario.assignment != plan.assignment:
         raise ValueError(
@@ -55,9 +57,10 @@ def grade_scenario(
         )
     clock = FakeClock(start=datetime.now(UTC))  # real start stamp, simulated elapsed time
     transport = FakeTransport(FakeDevice(scenario, clock, pinmap_hash=pinmap_hash(pinmap)))
+    sketch = repo_root / scenario.sketch if scenario.sketch else None
     return run(
         plan,
-        Submission(scenario.submission, repo_root / scenario.sketch if scenario.sketch else None),
+        Submission(scenario.submission, sketch, params={**scenario.params, **(params or {})}),
         NoopFlasher(),
         transport,
         rig_profile,
@@ -189,10 +192,13 @@ def run_batch(
     repo_root: Path = Path("."),
     cost_usd: CostFn | None = None,
 ) -> tuple[list[BatchRow], BatchMetrics]:
-    """Grade every scenario. ``cost_usd(input_tokens, output_tokens)`` prices LLM calls."""
+    """Grade every scenario. ``cost_usd(input_tokens, output_tokens)`` prices LLM calls.
+
+    Raises ``MissingParamsError`` before grading if a scenario lacks a declared param."""
     rows = []
-    for path in sorted(scenario_paths):
-        scenario = load_scenario(path)
+    scenarios = [load_scenario(path) for path in sorted(scenario_paths)]
+    require_params(plan, {s.submission: s.params for s in scenarios})
+    for scenario in scenarios:
         t0 = time.monotonic()
         report = grade_scenario(
             plan,
@@ -241,6 +247,39 @@ def load_labels(folder: Path) -> dict[str, GroundTruth]:
     return labels
 
 
+def load_params(folder: Path) -> dict[str, dict[str, str]]:
+    """Per-student values from ``folder/params.yaml`` (D63). No file: no values.
+
+    Raises ValueError for an entry that is not a mapping of strings or integers."""
+    path = folder / "params.yaml"
+    if not path.exists():
+        return {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    params = {str(k): param_values(v, f"{path}: {k}") for k, v in raw.items()}
+    for key in params:
+        if not (folder / key / f"{key}.ino").is_file():
+            _warn(f"{path}: entry {key!r} has no matching submission folder")
+    return params
+
+
+class MissingParamsError(ValueError):
+    """Some submissions have no value for a param the plan declares (instructor error)."""
+
+
+def require_params(plan: Plan, values: dict[str, dict[str, str]]) -> None:
+    """Raise ``MissingParamsError`` listing every submission that lacks a declared param."""
+    lines = []
+    for sub, have in values.items():
+        missing = [p for p in plan.params if p not in have]
+        if missing:
+            lines.append(f"  {sub}: {', '.join(missing)}")
+    if lines:
+        raise MissingParamsError(
+            f"plan '{plan.assignment}' needs per-student values that these submissions "
+            "lack (nothing was graded):\n" + "\n".join(lines)
+        )
+
+
 DEAD_RIG = "measuring board not responding: check USB / firmware"
 
 
@@ -266,12 +305,17 @@ def run_serial_batch(
     feedback: FeedbackGenerator | None = None,
     plan_warnings: list[str] | None = None,
     cost_usd: CostFn | None = None,
+    params: dict[str, dict[str, str]] | None = None,
 ) -> tuple[list[BatchRow], BatchMetrics, str | None]:
     """Flash and grade each submission on the real rig through one open ``transport``.
 
     Returns (rows, metrics, stopped), where ``stopped`` says why the batch ended early (or
-    is None). ``summary.csv`` is written even then, and on Ctrl+C.
+    is None). ``summary.csv`` is written even then, and on Ctrl+C. ``params`` (from
+    ``params.yaml``) are checked before anything runs: see ``require_params``.
     """
+    params = params or {}
+    submissions = [replace(s, params=params.get(s.id, s.params)) for s in submissions]
+    require_params(plan, {s.id: s.params for s in submissions})
     rows: list[BatchRow] = []
     n_checks = sum(len(s.expect) for s in plan.steps if is_measure(s))
     stopped = None
