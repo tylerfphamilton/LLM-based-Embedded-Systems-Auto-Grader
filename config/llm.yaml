@@ -35,3 +35,8 @@ force_tool: false
 price_per_mtok:
   input: 2.00
   output: 10.00
+
+# Per-student values (plan params, docs/decisions.md D63) replaced by <name> in every
+# feedback request, and put back into the accepted explanations afterwards. Short derived
+# values such as a digit sum would match unrelated text, so only list identifying ones.
+redact_params: [student_id]

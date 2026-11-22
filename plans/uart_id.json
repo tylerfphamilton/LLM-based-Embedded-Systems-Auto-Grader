@@ -1,0 +1,86 @@
+{
+  "schema_version": "0.1",
+  "assignment": "uart_id",
+  "description": "The sketch answers ID?, SUM? and HEX? on Serial1 at 9600 baud with values derived from the student's own ID, and ERR for anything else.",
+  "params": ["student_id", "digit_sum", "id_hex"],
+  "setup": { "reset": true, "boot_wait_ms": 1000 },
+  "steps": [
+    { "op": "uart_send", "id": "flush", "baud": 9600, "data": "\n" },
+    { "op": "wait", "ms": 200 },
+
+    {
+      "op": "measure", "id": "id_lf", "concurrent_with_next": true,
+      "requirement": "ID? (ended by \\n) replies with your ID on one line",
+      "primitive": "uart_read", "baud": 9600, "window_ms": 300,
+      "expect": [
+        { "field": "text", "op": "matches", "value": "^{{student_id}}\\r?\\n$" },
+        { "field": "framing_errors", "op": "eq", "value": 0 }
+      ]
+    },
+    { "op": "uart_send", "id": "send_id_lf", "baud": 9600, "data": "ID?\n" },
+
+    {
+      "op": "measure", "id": "sum", "concurrent_with_next": true,
+      "requirement": "SUM? replies with the sum of your ID's digits",
+      "primitive": "uart_read", "baud": 9600, "window_ms": 300,
+      "expect": [
+        { "field": "text", "op": "matches", "value": "^{{digit_sum}}\\r?\\n$" },
+        { "field": "framing_errors", "op": "eq", "value": 0 }
+      ]
+    },
+    { "op": "uart_send", "id": "send_sum", "baud": 9600, "data": "SUM?\n" },
+
+    {
+      "op": "measure", "id": "hex", "concurrent_with_next": true,
+      "requirement": "HEX? replies with your ID in upper-case hex, without leading zeros",
+      "primitive": "uart_read", "baud": 9600, "window_ms": 300,
+      "expect": [
+        { "field": "text", "op": "matches", "value": "^{{id_hex}}\\r?\\n$" },
+        { "field": "framing_errors", "op": "eq", "value": 0 }
+      ]
+    },
+    { "op": "uart_send", "id": "send_hex", "baud": 9600, "data": "HEX?\n" },
+
+    {
+      "op": "measure", "id": "id_crlf", "concurrent_with_next": true,
+      "requirement": "ID? ended by \\r\\n is accepted too",
+      "primitive": "uart_read", "baud": 9600, "window_ms": 300,
+      "expect": [
+        { "field": "text", "op": "matches", "value": "^{{student_id}}\\r?\\n$" },
+        { "field": "framing_errors", "op": "eq", "value": 0 }
+      ]
+    },
+    { "op": "uart_send", "id": "send_id_crlf", "baud": 9600, "data": "ID?\r\n" },
+
+    {
+      "op": "measure", "id": "unknown", "concurrent_with_next": true,
+      "requirement": "An unknown command replies ERR",
+      "primitive": "uart_read", "baud": 9600, "window_ms": 300,
+      "expect": [
+        { "field": "text", "op": "matches", "value": "^ERR\\r?\\n$" },
+        { "field": "framing_errors", "op": "eq", "value": 0 }
+      ]
+    },
+    { "op": "uart_send", "id": "send_unknown", "baud": 9600, "data": "FOO?\n" },
+
+    {
+      "op": "measure", "id": "id_again", "concurrent_with_next": true,
+      "requirement": "The sketch keeps answering: a final ID? still replies with your ID",
+      "primitive": "uart_read", "baud": 9600, "window_ms": 300,
+      "expect": [
+        { "field": "text", "op": "matches", "value": "^{{student_id}}\\r?\\n$" },
+        { "field": "framing_errors", "op": "eq", "value": 0 }
+      ]
+    },
+    { "op": "uart_send", "id": "send_id_again", "baud": 9600, "data": "ID?\n" }
+  ],
+  "not_graded": [
+    { "requirement": "Code is commented and readable", "reason": "Not observable electrically" }
+  ],
+  "assumptions": [
+    "The plan first sends one empty line, unchecked, to flush anything the Nano's receiver picked up when the rig first drove its line; whatever the sketch does with it is ignored, and the next command is sent 200 ms later",
+    "\"Reply promptly\" is taken as: the whole reply line arrives within 300 ms of the measurement starting (sending a command takes about 5 ms at 9600 baud); a reply that arrives later lands in the next check",
+    "Each reply is exactly one line: the value, then \\n or \\r\\n, with nothing before or after it",
+    "No boot message is checked: the rig can only start reading after the reset and boot wait, so anything printed during boot is lost"
+  ]
+}

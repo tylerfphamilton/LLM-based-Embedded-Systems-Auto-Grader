@@ -16,6 +16,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from grader.clock import FakeClock
+from grader.plan import param_values
 from grader.protocol import (
     PROTOCOL_VERSION,
     Arm,
@@ -141,6 +142,7 @@ class Scenario(_Model):
     sketch: Path | None = None  # student sketch directory, relative to the repo root
     description: str = ""
     ground_truth: GroundTruth | None = None
+    params: dict[str, str] = Field(default_factory=dict)  # values for {{name}} (D63)
     noise: Noise | None = None
     debug_lines: bool = False
     ping: PingReply | None = None
@@ -148,6 +150,11 @@ class Scenario(_Model):
     fail_command: FailRule | list[FailRule] | None = None
     default: Default = Field(default_factory=Default)
     expected_verdicts: dict[str, VerdictName] = Field(default_factory=dict)
+
+    @field_validator("params", mode="before")
+    @classmethod
+    def _params_as_strings(cls, v: Any) -> dict[str, str]:
+        return param_values(v, "params")
 
     @property
     def fail_rules(self) -> list[FailRule]:

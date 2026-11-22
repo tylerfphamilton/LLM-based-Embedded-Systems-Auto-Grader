@@ -1,0 +1,11 @@
+assignment,submission,ground_truth_faulty,fault,pass,fail,borderline,error,flagged,llm_input_tokens,llm_output_tokens,llm_latency_s,llm_cost_usd,elapsed_s
+uart_id_sonnet_p,answers_once,true,answers_once,4,10,0,0,true,,,,,27.0
+uart_id_sonnet_p,ascii_sum,true,ascii_sum,11,3,0,0,true,,,,,25.9
+uart_id_sonnet_p,copied_id,true,copied_id,5,9,0,0,true,,,,,26.4
+uart_id_sonnet_p,correct,false,,14,0,0,0,false,,,,,25.9
+uart_id_sonnet_p,correct_alt_style,false,,14,0,0,0,false,,,,,25.4
+uart_id_sonnet_p,hex_lowercase,true,hex_lowercase,11,3,0,0,true,,,,,26.0
+uart_id_sonnet_p,lf_only,true,lf_only,10,4,0,0,true,,,,,25.3
+uart_id_sonnet_p,no_err,true,no_err,12,2,0,0,true,,,,,25.5
+uart_id_sonnet_p,usb_serial,true,usb_serial,3,11,0,0,true,,,,,25.8
+uart_id_sonnet_p,wrong_baud,true,wrong_baud,3,11,0,0,true,,,,,25.7

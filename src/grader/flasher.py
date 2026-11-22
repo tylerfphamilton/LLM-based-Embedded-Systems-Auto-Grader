@@ -6,7 +6,7 @@ import subprocess
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -19,6 +19,8 @@ NANO33BLE_FQBN = "arduino:mbed_nano:nano33ble"
 class Submission:
     id: str
     sketch_dir: Path | None = None
+    # Per-student values for a plan's {{name}} placeholders (D63).
+    params: dict[str, str] = field(default_factory=dict, hash=False, compare=False)
 
 
 @dataclass(frozen=True)

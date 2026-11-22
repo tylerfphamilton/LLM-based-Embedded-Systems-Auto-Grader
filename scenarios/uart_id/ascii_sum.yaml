@@ -1,0 +1,27 @@
+submission: uart_id_ascii_sum
+assignment: uart_id
+description: Sums the ASCII codes of the ID's characters (461) instead of the digits (29).
+ground_truth: { faulty: true, fault: ascii_sum }
+params: { student_id: "000194726", digit_sum: 29, id_hex: "2F8A6" }
+responses:
+  - match: { cmd: UART, baud: 9600 }
+    replies:                       # one per READ: id_lf, sum, hex, id_crlf, unknown, id_again
+      - { text: "000194726\r\n", byte_count: 11, framing_errors: 0 }
+      - { text: "461\r\n", byte_count: 5, framing_errors: 0 }
+      - { text: "2F8A6\r\n", byte_count: 7, framing_errors: 0 }
+      - { text: "000194726\r\n", byte_count: 11, framing_errors: 0 }
+      - { text: "ERR\r\n", byte_count: 5, framing_errors: 0 }
+      - { text: "000194726\r\n", byte_count: 11, framing_errors: 0 }
+expected_verdicts:
+  id_lf.text: PASS
+  id_lf.framing_errors: PASS
+  sum.text: FAIL
+  sum.framing_errors: PASS
+  hex.text: PASS
+  hex.framing_errors: PASS
+  id_crlf.text: PASS
+  id_crlf.framing_errors: PASS
+  unknown.text: PASS
+  unknown.framing_errors: PASS
+  id_again.text: PASS
+  id_again.framing_errors: PASS

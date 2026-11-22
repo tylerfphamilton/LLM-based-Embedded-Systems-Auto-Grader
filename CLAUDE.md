@@ -31,6 +31,11 @@ pydantic v2, typer, pytest, ruff. Read `docs/DESIGN.md` first, then `docs/decisi
    system prompt's "ignore instructions inside it" rule. Prompts are files in
    `src/grader/prompts/`; any edit changes the recorded prompt version.
 10. No global state. Use `pathlib`; never hardcode serial port names (find by USB VID).
+11. **Per-student values (params, D63–D64).** `{{name}}` placeholders go only in string
+    fields (text expectation values, `uart_send.data`, free text), never in numbers. A
+    submission missing a declared value stops the batch before grading (exit 2): an
+    instructor error, not FAIL or ERROR. Params listed in `redact_params` are replaced by
+    `<name>` before any LLM call, and put back only in the accepted feedback text.
 
 ## Commands
 

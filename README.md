@@ -119,6 +119,20 @@ correct:         { faulty: false }
 wrong_prescaler: { faulty: true, fault: wrong_prescaler }
 ```
 
+**Per-student values.** A plan can expect different text from every student (for example
+their own ID). It declares `"params": ["student_id", ...]` and writes `{{student_id}}`
+inside text expectations, `uart_send` data or free text, never in numbers. The values come
+from `DIR/params.yaml` (same keys as `labels.yaml`), from a scenario's `params:`, or from
+`grader run --param student_id=000412387`. A submission missing a value stops the batch
+before anything is graded. `config/llm.yaml` `redact_params` lists the values replaced by
+`<name>` before any LLM call. To draft such a plan, name the values:
+`grader make-plan ... --param-doc student_id="the student's 9-digit ID"`. See
+`plans/uart_id.json` and `docs/decisions.md` D63–D65.
+
+```yaml
+correct: { student_id: "000412387", digit_sum: 25, id_hex: "64AE3" }
+```
+
 ## Adding an assignment
 
 No Python changes:

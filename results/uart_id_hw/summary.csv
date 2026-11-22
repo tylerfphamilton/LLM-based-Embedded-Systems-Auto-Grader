@@ -1,0 +1,11 @@
+assignment,submission,ground_truth_faulty,fault,pass,fail,borderline,error,flagged,llm_input_tokens,llm_output_tokens,llm_latency_s,llm_cost_usd,elapsed_s
+uart_id,answers_once,true,answers_once,7,5,0,0,true,,,,,29.9
+uart_id,ascii_sum,true,ascii_sum,11,1,0,0,true,,,,,23.1
+uart_id,copied_id,true,copied_id,7,5,0,0,true,,,,,23.6
+uart_id,correct,false,,12,0,0,0,false,,,,,23.5
+uart_id,correct_alt_style,false,,12,0,0,0,false,,,,,23.0
+uart_id,hex_lowercase,true,hex_lowercase,11,1,0,0,true,,,,,22.9
+uart_id,lf_only,true,lf_only,11,1,0,0,true,,,,,23.3
+uart_id,no_err,true,no_err,11,1,0,0,true,,,,,22.9
+uart_id,usb_serial,true,usb_serial,6,6,0,0,true,,,,,23.3
+uart_id,wrong_baud,true,wrong_baud,6,6,0,0,true,,,,,23.1

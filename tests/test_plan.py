@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from grader.plan import PlanError, check_ids, export_schema, load_plan, parse_plan
+from grader.plan import PlanError, check_ids, export_schema, instantiate, load_plan, parse_plan
 from grader.validate import validate_plan
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +40,10 @@ def test_example_plans_are_valid(plan_path: Path, pinmap) -> None:
     plan = load_plan(plan_path)
     assert plan.assignment == plan_path.stem
     assert validate_plan(plan, pinmap) == []
+    # A templated plan must stay valid once filled in (its matches regexes must compile).
+    for dummy in ("0", "a.b+c"):
+        filled = instantiate(plan, {p: dummy for p in plan.params})
+        assert validate_plan(filled, pinmap) == []
 
 
 def test_every_bad_fixture_is_covered() -> None:

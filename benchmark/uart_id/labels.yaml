@@ -1,0 +1,11 @@
+# Ground truth for metrics only; the LLM never sees this file.
+correct:            { faulty: false }
+correct_alt_style:  { faulty: false }
+copied_id:          { faulty: true, fault: copied_id }
+ascii_sum:          { faulty: true, fault: ascii_sum }
+lf_only:            { faulty: true, fault: lf_only }
+no_err:             { faulty: true, fault: no_err }
+answers_once:       { faulty: true, fault: answers_once }
+wrong_baud:         { faulty: true, fault: wrong_baud }
+hex_lowercase:      { faulty: true, fault: hex_lowercase }
+usb_serial:         { faulty: true, fault: usb_serial }

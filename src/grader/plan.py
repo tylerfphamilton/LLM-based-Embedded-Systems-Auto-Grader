@@ -24,6 +24,8 @@ from pydantic import (
 
 SCHEMA_VERSION = "0.1"
 ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_\-]*$"
+PARAM_PATTERN = r"^[a-z][a-z0-9_]*$"
+PLACEHOLDER = re.compile(r"\{\{([^{}]*)\}\}")  # {{name}}: never clashes with regex \d{3}
 
 Edge = Literal["rising", "falling", "any"]
 Level = Literal["high", "low"]
@@ -329,6 +331,10 @@ class Plan(StrictModel):
     assignment: Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]+$")]
     description: str
     setup: Setup = Field(default_factory=Setup)
+    params: list[Annotated[str, StringConstraints(pattern=PARAM_PATTERN)]] = Field(
+        default_factory=list,
+        description="Per-student values, written as {{name}} in text values and uart_send data.",
+    )
     steps: list[Step] = Field(min_length=1)
     not_graded: list[NotGraded] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
@@ -419,6 +425,56 @@ def load_plan(path: str | Path) -> Plan:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise PlanError([f"{path.name}: not valid JSON ({exc})"]) from None
+    return parse_plan(raw)
+
+
+def param_values(raw: Any, where: str) -> dict[str, str]:
+    """A ``{name: value}`` mapping of strings or integers, as strings (D63)."""
+    if not isinstance(raw, dict):
+        raise ValueError(f"{where}: per-student values must be a mapping of name: value.")
+    out = {}
+    for k, v in raw.items():
+        if isinstance(v, bool) or not isinstance(v, str | int):
+            raise ValueError(f"{where}: value of '{k}' must be a string or an integer.")
+        out[str(k)] = str(v)
+    return out
+
+
+def instantiate(plan: Plan, values: dict[str, str]) -> Plan:
+    """Fill in a plan's ``{{name}}`` placeholders with one submission's values.
+
+    Inside a ``matches`` expectation the value is ``re.escape``d. The result declares no
+    params, so it validates like a hand-written plan. A plan without params is returned as is.
+    """
+    if not plan.params:
+        return plan
+    missing = [p for p in plan.params if p not in values]
+    if missing:
+        raise PlanError(
+            [f"plan '{plan.assignment}': no value for param '{p}' was given." for p in missing]
+        )
+
+    def fill(text: str, regex: bool) -> str:
+        def sub(m: re.Match[str]) -> str:
+            if m.group(1) not in plan.params:
+                return m.group(0)
+            value = values[m.group(1)]
+            return re.escape(value) if regex else value
+
+        return PLACEHOLDER.sub(sub, text)
+
+    def walk(node: Any, regex: bool = False) -> Any:
+        if isinstance(node, str):
+            return fill(node, regex)
+        if isinstance(node, list):
+            return [walk(x) for x in node]
+        if isinstance(node, dict):
+            is_regex = node.get("op") == "matches"
+            return {k: walk(v, is_regex and k == "value") for k, v in node.items()}
+        return node
+
+    raw = walk(plan.model_dump(mode="json"))
+    raw["params"] = []
     return parse_plan(raw)
 
 

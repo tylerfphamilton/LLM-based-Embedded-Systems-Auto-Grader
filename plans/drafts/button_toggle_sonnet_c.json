@@ -1,0 +1,359 @@
+{
+  "schema_version": "0.1",
+  "assignment": "button_toggle_sonnet_c",
+  "description": "Checks LED off after reset, one toggle per bouncy press, quick reaction, ON/OFF lines on Serial1 at 9600 baud, no toggle on release, and the internal pull-up.",
+  "setup": {
+    "reset": true,
+    "boot_wait_ms": 1000
+  },
+  "assumptions": [
+    "The handout gives no number for 'quickly', so I use at most 50 ms from the first press edge to the LED change (this includes about 7 ms of contact bounce).",
+    "Line ending is not specified, so I accept either LF or CRLF after ON/OFF.",
+    "Each bounce is 7 edges at 1 ms intervals (7 ms), as the rig guidance recommends.",
+    "Quiet windows of 50 ms (after reset and for the pull-up check) and 500 ms (after a press) are my own choice."
+  ],
+  "not_graded": [
+    {
+      "requirement": "Implement debouncing in software, without blocking delay() calls",
+      "reason": "Code structure is not directly observable electrically; only the debounced behaviour is graded."
+    },
+    {
+      "requirement": "Comment your code",
+      "reason": "Comments cannot be observed electrically."
+    }
+  ],
+  "steps": [
+    {
+      "op": "measure",
+      "id": "led_off_reset",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 50,
+      "requirement": "The LED is off after reset and does not blink.",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press1_led",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "any",
+      "timeout_ms": 500,
+      "concurrent_with_next": true,
+      "requirement": "The first bouncy press turns the LED on quickly, with exactly one LED change.",
+      "expect": [
+        {
+          "op": "not_null",
+          "field": "delay_ms"
+        },
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 50
+        },
+        {
+          "op": "eq",
+          "field": "to_edge_count",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press1_uart",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 500,
+      "concurrent_with_next": true,
+      "requirement": "The first press prints exactly one line ON on Serial1.",
+      "expect": [
+        {
+          "op": "matches",
+          "field": "text",
+          "value": "^ON\\r?\\n$"
+        },
+        {
+          "op": "eq",
+          "field": "framing_errors",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 7,
+      "interval_us": 1000,
+      "final_level": "low",
+      "id": "press1"
+    },
+    {
+      "op": "wait",
+      "ms": 200
+    },
+    {
+      "op": "measure",
+      "id": "release1_led",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "requirement": "Releasing the button (with bounce) does not change the LED, which stays on.",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "release1_uart",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "requirement": "Releasing the button prints nothing.",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "byte_count",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 7,
+      "interval_us": 1000,
+      "final_level": "high",
+      "id": "release1"
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release"
+    },
+    {
+      "op": "wait",
+      "ms": 200
+    },
+    {
+      "op": "measure",
+      "id": "press2_led",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "any",
+      "timeout_ms": 500,
+      "concurrent_with_next": true,
+      "requirement": "The second bouncy press turns the LED off quickly, with exactly one LED change.",
+      "expect": [
+        {
+          "op": "not_null",
+          "field": "delay_ms"
+        },
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 50
+        },
+        {
+          "op": "eq",
+          "field": "to_edge_count",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press2_uart",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 500,
+      "concurrent_with_next": true,
+      "requirement": "The second press prints exactly one line OFF on Serial1.",
+      "expect": [
+        {
+          "op": "matches",
+          "field": "text",
+          "value": "^OFF\\r?\\n$"
+        },
+        {
+          "op": "eq",
+          "field": "framing_errors",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 7,
+      "interval_us": 1000,
+      "final_level": "low",
+      "id": "press2"
+    },
+    {
+      "op": "wait",
+      "ms": 200
+    },
+    {
+      "op": "measure",
+      "id": "release2_led",
+      "primitive": "logic_trace",
+      "pin": "D13",
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "requirement": "Releasing the button (with bounce) does not change the LED, which stays off.",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "edge_count",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "release2_uart",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 300,
+      "concurrent_with_next": true,
+      "requirement": "Releasing the button prints nothing.",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "byte_count",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 7,
+      "interval_us": 1000,
+      "final_level": "high",
+      "id": "release2"
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release"
+    },
+    {
+      "op": "wait",
+      "ms": 200
+    },
+    {
+      "op": "measure",
+      "id": "press3_led",
+      "primitive": "edge_delay",
+      "from_pin": "D2",
+      "from_edge": "falling",
+      "to_pin": "D13",
+      "to_edge": "any",
+      "timeout_ms": 500,
+      "concurrent_with_next": true,
+      "requirement": "The third bouncy press turns the LED on again, with exactly one LED change.",
+      "expect": [
+        {
+          "op": "not_null",
+          "field": "delay_ms"
+        },
+        {
+          "op": "le",
+          "field": "delay_ms",
+          "value": 50
+        },
+        {
+          "op": "eq",
+          "field": "to_edge_count",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "measure",
+      "id": "press3_uart",
+      "primitive": "uart_read",
+      "baud": 9600,
+      "window_ms": 500,
+      "concurrent_with_next": true,
+      "requirement": "The third press prints exactly one line ON on Serial1.",
+      "expect": [
+        {
+          "op": "matches",
+          "field": "text",
+          "value": "^ON\\r?\\n$"
+        }
+      ]
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "bounce",
+      "count": 7,
+      "interval_us": 1000,
+      "final_level": "low",
+      "id": "press3"
+    },
+    {
+      "op": "wait",
+      "ms": 200
+    },
+    {
+      "op": "drive",
+      "pin": "D2",
+      "action": "release",
+      "id": "plain_release"
+    },
+    {
+      "op": "measure",
+      "id": "pullup",
+      "primitive": "logic_trace",
+      "pin": "D2",
+      "window_ms": 50,
+      "requirement": "The button pin uses the internal pull-up, so it reads high when released.",
+      "expect": [
+        {
+          "op": "eq",
+          "field": "final_level",
+          "value": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,474 @@
+{
+  "prompt_version": "4c5bc7f0",
+  "ok": true,
+  "errors": [],
+  "notes": [
+    "attempt 1: plan was nested under 'plan'; unwrapped it"
+  ],
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Write the test plan for assignment `uart_id_opus`.\n\n<handout>\n# Lab 5: Serial \"student ID\" responder (mock handout)\n\n> Mock handout written for testing `grader make-plan` with per-student values. It is not\n> an official course document.\n\n## Goal\n\nWrite a sketch that answers simple text commands over a serial port, using values worked\nout from **your own university ID**. Every student's correct answers are different.\n\n## Hardware\n\n* **Serial1** (pins D0/D1), not the USB `Serial` port, at **9600 baud**, 8N1.\n* Nothing else is connected.\n\n## Commands\n\nThe grader sends one command per line. A line may end with `\\n` or with `\\r\\n`, and your\nsketch must accept both (the `\\r` is part of the line ending, not of the command). Ignore\nempty lines.\n\n| Command | Reply (one line) |\n|---|---|\n| `ID?` | your 9-digit university ID, e.g. `905123456` |\n| `SUM?` | the sum of your ID's digits, e.g. `35` |\n| `HEX?` | your ID as an upper-case hexadecimal number without leading zeros, e.g. `35F31680` |\n| anything else | `ERR` |\n\nEnd every reply with `\\r\\n` (`Serial1.println`) or `\\n`.\n\n## Requirements\n\n1. Use your own university ID. Keep the leading zeros in the `ID?` reply.\n2. Reply promptly to every command, for as long as the board is powered: the sketch must\n   keep answering, not just the first time.\n3. Print nothing except the replies (no start-up message, no debug output on Serial1).\n4. Comment your code.\n\n## Submission\n\nSubmit your sketch folder.\n</handout>\n\n<pin_map>\n# Student board (Arduino Nano 33 BLE Sense) pin name -> measuring board (Nucleo-L476RG) pin.\n# Capabilities are from the MEASURING board's point of view (uart_rx = STM32 receives).\n#\n# !!! Every stm32 value is a PLACEHOLDER until verified in STM32CubeMX against the wiring. !!!\npins:\n  D5:  { stm32: PA0,  caps: [gpio, timer_capture] }   # Nucleo A0, TIM2_CH1 (FREQ)\n  D2:  { stm32: PA8,  caps: [gpio, drive] }           # Nucleo D7, via 1 kOhm; STM32 drives the student's button input\n  D13: { stm32: PB3,  caps: [gpio, timer_capture] }   # Nucleo D3, TIM2_CH2; Nano on-board LED\n  D1:  { stm32: PA10, caps: [uart_rx] }               # Nucleo D2, Nano Serial1 TX -> STM32 USART1 RX\n  D0:  { stm32: PA9,  caps: [uart_tx] }               # Nucleo D8, via 1 kOhm; Nano Serial1 RX <- STM32 USART1 TX\n  A0:  { stm32: TBD,  caps: [analog_in, dac] }        # placeholder; L476 DAC1_OUT1 is PA4\n  A4:  { stm32: TBD,  caps: [i2c_sda] }               # placeholder, STM32 acts as I2C target\n  A5:  { stm32: TBD,  caps: [i2c_scl] }               # placeholder\n  # Rig only, never used by a plan: open-drain line from the STM32 to the Nano's RST pin.\n  RST: { stm32: PA1,  caps: [reset] }                 # Nucleo A1 -> Nano RST (open-drain, pulled low to reset)\n</pin_map>\n\n<primitives>\nEach measurement primitive and the result fields it returns (type, unit, and when it is null):\n- freq_duty:\n    - frequency_hz: number, Hz; null if fewer than 2 rising edges (no signal)\n    - duty_pct: number, % of the period spent high (0-100); null if no signal\n    - edge_count: integer, rising edges in the window\n- edge_delay:\n    - delay_ms: number, ms from the first from_edge on from_pin to the first to_edge on to_pin; null if to_pin never changed within timeout_ms\n    - to_edge_count: integer, to_edge edges on to_pin from the trigger until timeout_ms\n- logic_trace:\n    - edge_count: integer, edges in either direction during the window\n    - final_level: integer, 0 (low) or 1 (high) at the end of the window\n    - edges_ms: list of numbers, ms of each edge from the start of the window\n- uart_read:\n    - text: string, the bytes received (undecodable bytes become U+FFFD)\n    - byte_count: integer, bytes received\n    - framing_errors: integer, bytes received with framing errors (e.g. wrong baud)\n- i2c_log:\n    - read_count: integer, read transactions\n    - write_count: integer, write transactions\n    - transactions: list of strings such as \"W:0x68:0x3B\" or \"R:0x68:0x3B:6\"\n- analog_read:\n    - mean_mv: number, mV\n    - min_mv: number, mV\n    - max_mv: number, mV\n</primitives>\n\n<params>\nnone\n</params>"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "signature": "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",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01FLgz55u9B98rGKAUjNNQqy",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "plan": {
+              "schema_version": "0.1",
+              "assignment": "uart_id_opus",
+              "description": "Checks the Serial1 (9600 8N1) command responder: no start-up output, correctly formatted replies to ID?, SUM? and HEX? with both \\n and \\r\\n line endings, ERR for unknown commands, empty lines ignored, and that the sketch keeps answering.",
+              "params": [],
+              "setup": {
+                "reset": true,
+                "boot_wait_ms": 1000
+              },
+              "assumptions": [
+                "No per-student ID values are provided, so replies are checked only for the format the handout gives (9 digits, 1-2 decimal digits, upper-case hex without leading zeros), not for the exact values.",
+                "The handout says 'promptly' without a time limit, so each reply must arrive completely within a 500 ms window after the command is sent.",
+                "A reply may end with either \\r\\n or \\n, as the handout allows.",
+                "The digit sum of a 9-digit ID is at most 81, so the SUM? reply is expected to have 1 or 2 digits.",
+                "A 9-digit ID is at most 999999999 = 0x3B9AC9FF, so the HEX? reply is expected to have 1 to 8 hex digits with no leading zero.",
+                "Start-up silence is checked by listening for 2000 ms after the boot wait before any command is sent."
+              ],
+              "not_graded": [
+                {
+                  "requirement": "Use your own university ID.",
+                  "reason": "The grader does not know each student's ID, so it can only check the reply format, not the actual values or whether the three replies agree with each other."
+                },
+                {
+                  "requirement": "Comment your code.",
+                  "reason": "Code comments cannot be seen on the pins."
+                }
+              ],
+              "steps": [
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "silent_boot",
+                  "requirement": "The sketch prints nothing on Serial1 before it receives a command (no start-up message).",
+                  "baud": 9600,
+                  "window_ms": 2000,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "byte_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "id_lf",
+                  "requirement": "ID? ending in \\n gets your 9-digit ID (leading zeros kept) on one line.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[0-9]{9}\\r?\\n$"
+                    },
+                    {
+                      "op": "eq",
+                      "field": "framing_errors",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "ID?\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "id_crlf",
+                  "requirement": "ID? ending in \\r\\n also gets your 9-digit ID (the \\r is not part of the command).",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[0-9]{9}\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "ID?\r\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "sum_lf",
+                  "requirement": "SUM? gets the sum of your ID's digits as a decimal number on one line.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[0-9]{1,2}\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "SUM?\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "hex_crlf",
+                  "requirement": "HEX? gets your ID in upper-case hex with no leading zeros on one line.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[1-9A-F][0-9A-F]{0,7}\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "HEX?\r\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "unknown",
+                  "requirement": "An unknown command gets the reply ERR.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^ERR\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "FOO?\r\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "empty_line",
+                  "requirement": "Empty lines are ignored and get no reply.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "byte_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "\r\n\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "repeat",
+                  "requirement": "The sketch keeps answering: a later ID? still gets your 9-digit ID.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[0-9]{9}\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "ID?\n"
+                }
+              ]
+            }
+          },
+          "name": "submit_plan",
+          "type": "tool_use"
+        }
+      ]
+    }
+  ],
+  "responses": [
+    {
+      "id": "msg_011ChJdsrXWg62CXBF9wZTCn",
+      "container": null,
+      "content": [
+        {
+          "signature": "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",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01FLgz55u9B98rGKAUjNNQqy",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "plan": {
+              "schema_version": "0.1",
+              "assignment": "uart_id_opus",
+              "description": "Checks the Serial1 (9600 8N1) command responder: no start-up output, correctly formatted replies to ID?, SUM? and HEX? with both \\n and \\r\\n line endings, ERR for unknown commands, empty lines ignored, and that the sketch keeps answering.",
+              "params": [],
+              "setup": {
+                "reset": true,
+                "boot_wait_ms": 1000
+              },
+              "assumptions": [
+                "No per-student ID values are provided, so replies are checked only for the format the handout gives (9 digits, 1-2 decimal digits, upper-case hex without leading zeros), not for the exact values.",
+                "The handout says 'promptly' without a time limit, so each reply must arrive completely within a 500 ms window after the command is sent.",
+                "A reply may end with either \\r\\n or \\n, as the handout allows.",
+                "The digit sum of a 9-digit ID is at most 81, so the SUM? reply is expected to have 1 or 2 digits.",
+                "A 9-digit ID is at most 999999999 = 0x3B9AC9FF, so the HEX? reply is expected to have 1 to 8 hex digits with no leading zero.",
+                "Start-up silence is checked by listening for 2000 ms after the boot wait before any command is sent."
+              ],
+              "not_graded": [
+                {
+                  "requirement": "Use your own university ID.",
+                  "reason": "The grader does not know each student's ID, so it can only check the reply format, not the actual values or whether the three replies agree with each other."
+                },
+                {
+                  "requirement": "Comment your code.",
+                  "reason": "Code comments cannot be seen on the pins."
+                }
+              ],
+              "steps": [
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "silent_boot",
+                  "requirement": "The sketch prints nothing on Serial1 before it receives a command (no start-up message).",
+                  "baud": 9600,
+                  "window_ms": 2000,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "byte_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "id_lf",
+                  "requirement": "ID? ending in \\n gets your 9-digit ID (leading zeros kept) on one line.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[0-9]{9}\\r?\\n$"
+                    },
+                    {
+                      "op": "eq",
+                      "field": "framing_errors",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "ID?\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "id_crlf",
+                  "requirement": "ID? ending in \\r\\n also gets your 9-digit ID (the \\r is not part of the command).",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[0-9]{9}\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "ID?\r\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "sum_lf",
+                  "requirement": "SUM? gets the sum of your ID's digits as a decimal number on one line.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[0-9]{1,2}\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "SUM?\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "hex_crlf",
+                  "requirement": "HEX? gets your ID in upper-case hex with no leading zeros on one line.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[1-9A-F][0-9A-F]{0,7}\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "HEX?\r\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "unknown",
+                  "requirement": "An unknown command gets the reply ERR.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^ERR\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "FOO?\r\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "empty_line",
+                  "requirement": "Empty lines are ignored and get no reply.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "eq",
+                      "field": "byte_count",
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "\r\n\n"
+                },
+                {
+                  "op": "measure",
+                  "primitive": "uart_read",
+                  "id": "repeat",
+                  "requirement": "The sketch keeps answering: a later ID? still gets your 9-digit ID.",
+                  "baud": 9600,
+                  "window_ms": 500,
+                  "concurrent_with_next": true,
+                  "expect": [
+                    {
+                      "op": "matches",
+                      "field": "text",
+                      "value": "^[0-9]{9}\\r?\\n$"
+                    }
+                  ]
+                },
+                {
+                  "op": "uart_send",
+                  "baud": 9600,
+                  "data": "ID?\n"
+                }
+              ]
+            }
+          },
+          "name": "submit_plan",
+          "type": "tool_use"
+        }
+      ],
+      "diagnostics": null,
+      "model": "claude-opus-5-5",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "inference_geo": "global",
+        "input_tokens": 12524,
+        "output_tokens": 2417,
+        "output_tokens_details": {
+          "thinking_tokens": 633
+        },
+        "service_tier": "standard",
+        "speed": "standard"
+      }
+    }
+  ]
+}

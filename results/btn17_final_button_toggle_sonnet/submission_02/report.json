@@ -1,0 +1,888 @@
+{
+  "report_version": "0.1",
+  "assignment": "button_toggle_sonnet_c",
+  "plan_description": "Checks LED off after reset, one toggle per bouncy press, quick reaction, ON/OFF lines on Serial1 at 9600 baud, no toggle on release, and the internal pull-up.",
+  "plan_schema_version": "0.1",
+  "submission": "submission_02",
+  "started_at": "2026-11-22T23:32:50.118047+00:00",
+  "finished_at": "2026-11-22T23:33:11.187634+00:00",
+  "rig": {
+    "transport": "serial:COM5",
+    "flasher": "arduino-cli",
+    "profile": "nucleo-l476rg-draft"
+  },
+  "flash": {
+    "ok": true,
+    "stage": "done",
+    "student_fault": false,
+    "log": "Sketch uses 85536 bytes (8%) of program storage space. Maximum is 983040 bytes.\nGlobal variables use 44568 bytes (17%) of dynamic memory, leaving 217576 bytes for local variables. Maximum is 262144 bytes.\nDevice       : nRF52840-QIAA\nVersion      : Arduino Bootloader (SAM-BA extended) 2.0 [Arduino:IKXYZ]\nAddress      : 0x0\nPages        : 256\nPage Size    : 4096 bytes\nTotal Size   : 1024KB\nPlanes       : 1\nLock Regions : 0\nLocked       : none\nSecurity     : false\nErase flash\n\nDone in 0.000 seconds\nWrite 85544 bytes to flash (21 pages)\n\n[                              ] 0% (0/21 pages)\n[=                             ] 4% (1/21 pages)\n[==                            ] 9% (2/21 pages)\n[====                          ] 14% (3/21 pages)\n[=====                         ] 19% (4/21 pages)\n[=======                       ] 23% (5/21 pages)\n[========                      ] 28% (6/21 pages)\n[==========                    ] 33% (7/21 pages)\n[===========                   ] 38% (8/21 pages)\n[============                  ] 42% (9/21 pages)\n[==============                ] 47% (10/21 pages)\n[===============               ] 52% (11/21 pages)\n[=================             ] 57% (12/21 pages)\n[==================            ] 61% (13/21 pages)\n[====================          ] 66% (14/21 pages)\n[=====================         ] 71% (15/21 pages)\n[======================        ] 76% (16/21 pages)\n[========================      ] 80% (17/21 pages)\n[=========================     ] 85% (18/21 pages)\n[===========================   ] 90% (19/21 pages)\n[============================  ] 95% (20/21 pages)\n[==============================] 100% (21/21 pages)\nDone in 3.491 seconds\nNew upload port: COM7 (serial)\n"
+  },
+  "params": {},
+  "assumptions": [
+    "The handout gives no number for 'quickly', so I use at most 50 ms from the first press edge to the LED change (this includes about 7 ms of contact bounce).",
+    "Line ending is not specified, so I accept either LF or CRLF after ON/OFF.",
+    "Each bounce is 7 edges at 1 ms intervals (7 ms), as the rig guidance recommends.",
+    "Quiet windows of 50 ms (after reset and for the pull-up check) and 500 ms (after a press) are my own choice."
+  ],
+  "rig_faults": [],
+  "rig_warnings": [],
+  "plan_warnings": [],
+  "checks": [
+    {
+      "id": "led_off_reset.final_level",
+      "step_id": "led_off_reset",
+      "requirement": "The LED is off after reset and does not blink.",
+      "primitive": "logic_trace",
+      "field": "final_level",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "led_off_reset.edge_count",
+      "step_id": "led_off_reset",
+      "requirement": "The LED is off after reset and does not blink.",
+      "primitive": "logic_trace",
+      "field": "edge_count",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press1_led.delay_ms",
+      "step_id": "press1_led",
+      "requirement": "The first bouncy press turns the LED on quickly, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "delay_ms",
+      "op": "not_null",
+      "expected": null,
+      "expected_text": "any value (not null)",
+      "tolerance": null,
+      "measured": 13.737,
+      "verdict": "PASS",
+      "reason": "measured 13.737 ms",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press1_led.delay_ms#2",
+      "step_id": "press1_led",
+      "requirement": "The first bouncy press turns the LED on quickly, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "delay_ms",
+      "op": "le",
+      "expected": 50,
+      "expected_text": "≤ 50 ms",
+      "tolerance": null,
+      "measured": 13.737,
+      "verdict": "PASS",
+      "reason": "measured 13.737 ms; expected ≤ 50 ms",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press1_led.to_edge_count",
+      "step_id": "press1_led",
+      "requirement": "The first bouncy press turns the LED on quickly, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "to_edge_count",
+      "op": "eq",
+      "expected": 1,
+      "expected_text": "= 1",
+      "tolerance": null,
+      "measured": 1,
+      "verdict": "PASS",
+      "reason": "measured 1; expected = 1",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press1_uart.text",
+      "step_id": "press1_uart",
+      "requirement": "The first press prints exactly one line ON on Serial1.",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^ON\\r?\\n$",
+      "expected_text": "matches /^ON\\r?\\n$/",
+      "tolerance": null,
+      "measured": "ON",
+      "verdict": "FAIL",
+      "reason": "received \"ON\", but expected matches /^ON\\r?\\n$/",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press1_uart.framing_errors",
+      "step_id": "press1_uart",
+      "requirement": "The first press prints exactly one line ON on Serial1.",
+      "primitive": "uart_read",
+      "field": "framing_errors",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "release1_led.edge_count",
+      "step_id": "release1_led",
+      "requirement": "Releasing the button (with bounce) does not change the LED, which stays on.",
+      "primitive": "logic_trace",
+      "field": "edge_count",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "release1_led.final_level",
+      "step_id": "release1_led",
+      "requirement": "Releasing the button (with bounce) does not change the LED, which stays on.",
+      "primitive": "logic_trace",
+      "field": "final_level",
+      "op": "eq",
+      "expected": 1,
+      "expected_text": "= 1",
+      "tolerance": null,
+      "measured": 1,
+      "verdict": "PASS",
+      "reason": "measured 1; expected = 1",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "release1_uart.byte_count",
+      "step_id": "release1_uart",
+      "requirement": "Releasing the button prints nothing.",
+      "primitive": "uart_read",
+      "field": "byte_count",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press2_led.delay_ms",
+      "step_id": "press2_led",
+      "requirement": "The second bouncy press turns the LED off quickly, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "delay_ms",
+      "op": "not_null",
+      "expected": null,
+      "expected_text": "any value (not null)",
+      "tolerance": null,
+      "measured": 13.178,
+      "verdict": "PASS",
+      "reason": "measured 13.178 ms",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press2_led.delay_ms#2",
+      "step_id": "press2_led",
+      "requirement": "The second bouncy press turns the LED off quickly, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "delay_ms",
+      "op": "le",
+      "expected": 50,
+      "expected_text": "≤ 50 ms",
+      "tolerance": null,
+      "measured": 13.178,
+      "verdict": "PASS",
+      "reason": "measured 13.178 ms; expected ≤ 50 ms",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press2_led.to_edge_count",
+      "step_id": "press2_led",
+      "requirement": "The second bouncy press turns the LED off quickly, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "to_edge_count",
+      "op": "eq",
+      "expected": 1,
+      "expected_text": "= 1",
+      "tolerance": null,
+      "measured": 1,
+      "verdict": "PASS",
+      "reason": "measured 1; expected = 1",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press2_uart.text",
+      "step_id": "press2_uart",
+      "requirement": "The second press prints exactly one line OFF on Serial1.",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^OFF\\r?\\n$",
+      "expected_text": "matches /^OFF\\r?\\n$/",
+      "tolerance": null,
+      "measured": "OFF",
+      "verdict": "FAIL",
+      "reason": "received \"OFF\", but expected matches /^OFF\\r?\\n$/",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press2_uart.framing_errors",
+      "step_id": "press2_uart",
+      "requirement": "The second press prints exactly one line OFF on Serial1.",
+      "primitive": "uart_read",
+      "field": "framing_errors",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "release2_led.edge_count",
+      "step_id": "release2_led",
+      "requirement": "Releasing the button (with bounce) does not change the LED, which stays off.",
+      "primitive": "logic_trace",
+      "field": "edge_count",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "release2_led.final_level",
+      "step_id": "release2_led",
+      "requirement": "Releasing the button (with bounce) does not change the LED, which stays off.",
+      "primitive": "logic_trace",
+      "field": "final_level",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "release2_uart.byte_count",
+      "step_id": "release2_uart",
+      "requirement": "Releasing the button prints nothing.",
+      "primitive": "uart_read",
+      "field": "byte_count",
+      "op": "eq",
+      "expected": 0,
+      "expected_text": "= 0",
+      "tolerance": null,
+      "measured": 0,
+      "verdict": "PASS",
+      "reason": "measured 0; expected = 0",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press3_led.delay_ms",
+      "step_id": "press3_led",
+      "requirement": "The third bouncy press turns the LED on again, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "delay_ms",
+      "op": "not_null",
+      "expected": null,
+      "expected_text": "any value (not null)",
+      "tolerance": null,
+      "measured": 13.102,
+      "verdict": "PASS",
+      "reason": "measured 13.102 ms",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press3_led.delay_ms#2",
+      "step_id": "press3_led",
+      "requirement": "The third bouncy press turns the LED on again, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "delay_ms",
+      "op": "le",
+      "expected": 50,
+      "expected_text": "≤ 50 ms",
+      "tolerance": null,
+      "measured": 13.102,
+      "verdict": "PASS",
+      "reason": "measured 13.102 ms; expected ≤ 50 ms",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press3_led.to_edge_count",
+      "step_id": "press3_led",
+      "requirement": "The third bouncy press turns the LED on again, with exactly one LED change.",
+      "primitive": "edge_delay",
+      "field": "to_edge_count",
+      "op": "eq",
+      "expected": 1,
+      "expected_text": "= 1",
+      "tolerance": null,
+      "measured": 1,
+      "verdict": "PASS",
+      "reason": "measured 1; expected = 1",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "press3_uart.text",
+      "step_id": "press3_uart",
+      "requirement": "The third press prints exactly one line ON on Serial1.",
+      "primitive": "uart_read",
+      "field": "text",
+      "op": "matches",
+      "expected": "^ON\\r?\\n$",
+      "expected_text": "matches /^ON\\r?\\n$/",
+      "tolerance": null,
+      "measured": "ON",
+      "verdict": "FAIL",
+      "reason": "received \"ON\", but expected matches /^ON\\r?\\n$/",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "pullup.final_level",
+      "step_id": "pullup",
+      "requirement": "The button pin uses the internal pull-up, so it reads high when released.",
+      "primitive": "logic_trace",
+      "field": "final_level",
+      "op": "eq",
+      "expected": 1,
+      "expected_text": "= 1",
+      "tolerance": null,
+      "measured": 1,
+      "verdict": "PASS",
+      "reason": "measured 1; expected = 1",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "not_graded.1",
+      "step_id": null,
+      "requirement": "Implement debouncing in software, without blocking delay() calls",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "Code structure is not directly observable electrically; only the debounced behaviour is graded.",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    },
+    {
+      "id": "not_graded.2",
+      "step_id": null,
+      "requirement": "Comment your code",
+      "primitive": null,
+      "field": null,
+      "op": null,
+      "expected": null,
+      "expected_text": "",
+      "tolerance": null,
+      "measured": null,
+      "verdict": "NOT_GRADED",
+      "reason": "Comments cannot be observed electrically.",
+      "feedback": null,
+      "code_location": null,
+      "cause_found": null,
+      "same_cause_as": null
+    }
+  ],
+  "command_log": [
+    {
+      "t_ms": 0.03,
+      "dir": "tx",
+      "line": "PING"
+    },
+    {
+      "t_ms": 5.63,
+      "dir": "rx",
+      "line": "OK fw=\"0.1\" protocol=\"0.2\" pinmap=\"46b391a6\""
+    },
+    {
+      "t_ms": 5.689,
+      "dir": "note",
+      "line": "handshake: {'fw': '0.1', 'protocol': '0.2', 'pinmap': '46b391a6'}"
+    },
+    {
+      "t_ms": 16727.597,
+      "dir": "tx",
+      "line": "DRIVE D2 RELEASE"
+    },
+    {
+      "t_ms": 16730.702,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 16730.755,
+      "dir": "tx",
+      "line": "RESET"
+    },
+    {
+      "t_ms": 16742.207,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 16742.27,
+      "dir": "tx",
+      "line": "WAIT 1000"
+    },
+    {
+      "t_ms": 17745.389,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 17745.487,
+      "dir": "tx",
+      "line": "TRACE D13 50"
+    },
+    {
+      "t_ms": 17801.13,
+      "dir": "rx",
+      "line": "OK edge_count=0 final_level=0 edges_ms=[]"
+    },
+    {
+      "t_ms": 17801.264,
+      "dir": "tx",
+      "line": "ARM DELAY D2 FALLING D13 ANY 500"
+    },
+    {
+      "t_ms": 17806.114,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 17806.173,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 17810.119,
+      "dir": "rx",
+      "line": "OK slot=1"
+    },
+    {
+      "t_ms": 17810.165,
+      "dir": "tx",
+      "line": "DRIVE D2 BOUNCE 7 1000 LOW"
+    },
+    {
+      "t_ms": 17819.184,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 17819.225,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 18317.459,
+      "dir": "rx",
+      "line": "OK delay_ms=13.737 to_edge_count=1"
+    },
+    {
+      "t_ms": 18317.677,
+      "dir": "tx",
+      "line": "COLLECT 1"
+    },
+    {
+      "t_ms": 18323.178,
+      "dir": "rx",
+      "line": "OK text=\"ON\" byte_count=2 framing_errors=0"
+    },
+    {
+      "t_ms": 18323.33,
+      "dir": "tx",
+      "line": "WAIT 200"
+    },
+    {
+      "t_ms": 18525.843,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 18525.95,
+      "dir": "tx",
+      "line": "ARM TRACE D13 300"
+    },
+    {
+      "t_ms": 18529.246,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 18529.294,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 300"
+    },
+    {
+      "t_ms": 18533.141,
+      "dir": "rx",
+      "line": "OK slot=1"
+    },
+    {
+      "t_ms": 18533.175,
+      "dir": "tx",
+      "line": "DRIVE D2 BOUNCE 7 1000 HIGH"
+    },
+    {
+      "t_ms": 18543.108,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 18543.145,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 18832.273,
+      "dir": "rx",
+      "line": "OK edge_count=0 final_level=1 edges_ms=[]"
+    },
+    {
+      "t_ms": 18832.515,
+      "dir": "tx",
+      "line": "COLLECT 1"
+    },
+    {
+      "t_ms": 18838.716,
+      "dir": "rx",
+      "line": "OK text=\"\" byte_count=0 framing_errors=0"
+    },
+    {
+      "t_ms": 18838.875,
+      "dir": "tx",
+      "line": "DRIVE D2 RELEASE"
+    },
+    {
+      "t_ms": 18841.553,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 18841.616,
+      "dir": "tx",
+      "line": "WAIT 200"
+    },
+    {
+      "t_ms": 19043.703,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 19043.818,
+      "dir": "tx",
+      "line": "ARM DELAY D2 FALLING D13 ANY 500"
+    },
+    {
+      "t_ms": 19048.535,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 19048.616,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 19052.58,
+      "dir": "rx",
+      "line": "OK slot=1"
+    },
+    {
+      "t_ms": 19052.655,
+      "dir": "tx",
+      "line": "DRIVE D2 BOUNCE 7 1000 LOW"
+    },
+    {
+      "t_ms": 19062.41,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 19062.465,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 19559.526,
+      "dir": "rx",
+      "line": "OK delay_ms=13.178 to_edge_count=1"
+    },
+    {
+      "t_ms": 19559.732,
+      "dir": "tx",
+      "line": "COLLECT 1"
+    },
+    {
+      "t_ms": 19565.296,
+      "dir": "rx",
+      "line": "OK text=\"OFF\" byte_count=3 framing_errors=0"
+    },
+    {
+      "t_ms": 19565.508,
+      "dir": "tx",
+      "line": "WAIT 200"
+    },
+    {
+      "t_ms": 19767.334,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 19767.406,
+      "dir": "tx",
+      "line": "ARM TRACE D13 300"
+    },
+    {
+      "t_ms": 19770.231,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 19770.279,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 300"
+    },
+    {
+      "t_ms": 19774.178,
+      "dir": "rx",
+      "line": "OK slot=1"
+    },
+    {
+      "t_ms": 19774.213,
+      "dir": "tx",
+      "line": "DRIVE D2 BOUNCE 7 1000 HIGH"
+    },
+    {
+      "t_ms": 19784.136,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 19784.157,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 20073.548,
+      "dir": "rx",
+      "line": "OK edge_count=0 final_level=0 edges_ms=[]"
+    },
+    {
+      "t_ms": 20073.73,
+      "dir": "tx",
+      "line": "COLLECT 1"
+    },
+    {
+      "t_ms": 20080.489,
+      "dir": "rx",
+      "line": "OK text=\"\" byte_count=0 framing_errors=0"
+    },
+    {
+      "t_ms": 20080.657,
+      "dir": "tx",
+      "line": "DRIVE D2 RELEASE"
+    },
+    {
+      "t_ms": 20083.309,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 20083.371,
+      "dir": "tx",
+      "line": "WAIT 200"
+    },
+    {
+      "t_ms": 20285.391,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 20285.46,
+      "dir": "tx",
+      "line": "ARM DELAY D2 FALLING D13 ANY 500"
+    },
+    {
+      "t_ms": 20290.565,
+      "dir": "rx",
+      "line": "OK slot=0"
+    },
+    {
+      "t_ms": 20290.632,
+      "dir": "tx",
+      "line": "ARM UART 9600 READ 500"
+    },
+    {
+      "t_ms": 20294.653,
+      "dir": "rx",
+      "line": "OK slot=1"
+    },
+    {
+      "t_ms": 20294.729,
+      "dir": "tx",
+      "line": "DRIVE D2 BOUNCE 7 1000 LOW"
+    },
+    {
+      "t_ms": 20304.373,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 20304.429,
+      "dir": "tx",
+      "line": "COLLECT 0"
+    },
+    {
+      "t_ms": 20801.75,
+      "dir": "rx",
+      "line": "OK delay_ms=13.102 to_edge_count=1"
+    },
+    {
+      "t_ms": 20802.064,
+      "dir": "tx",
+      "line": "COLLECT 1"
+    },
+    {
+      "t_ms": 20807.657,
+      "dir": "rx",
+      "line": "OK text=\"ON\" byte_count=2 framing_errors=0"
+    },
+    {
+      "t_ms": 20807.832,
+      "dir": "tx",
+      "line": "WAIT 200"
+    },
+    {
+      "t_ms": 21010.443,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 21010.515,
+      "dir": "tx",
+      "line": "DRIVE D2 RELEASE"
+    },
+    {
+      "t_ms": 21013.317,
+      "dir": "rx",
+      "line": "OK"
+    },
+    {
+      "t_ms": 21013.358,
+      "dir": "tx",
+      "line": "TRACE D2 50"
+    },
+    {
+      "t_ms": 21069.272,
+      "dir": "rx",
+      "line": "OK edge_count=0 final_level=1 edges_ms=[]"
+    }
+  ],
+  "summary": {
+    "total": 25,
+    "PASS": 20,
+    "FAIL": 3,
+    "BORDERLINE": 0,
+    "ERROR": 0,
+    "NOT_GRADED": 2
+  },
+  "llm": null
+}

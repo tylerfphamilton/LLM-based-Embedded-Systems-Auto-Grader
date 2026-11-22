@@ -1,0 +1,16 @@
+source: llm
+status: approved
+handout: handouts/uart_id.md
+handout_sha256: df6ed74a8acc6c86007bd359cb6df4ef85f50b815ea263fd7132f86689ccec0e
+model: claude-sonnet-5-5
+prompt_version: 4c5bc7f0
+attempts: 1
+notes: []
+tokens:
+  input: 12605
+  output: 3464
+generated_at: '2026-11-22T23:16:55.307410+00:00'
+draft: plans/drafts/uart_id_sonnet_p.draft.json
+approved_by: Sean
+approved_at: '2026-11-22T23:18:30.042958+00:00'
+plan_sha256: 5f8619654cac5237f7384ff60fd91b7bfc22e3b1aa1eee9c05b342eebdded711

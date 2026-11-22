@@ -1,0 +1,27 @@
+submission: uart_id_correct
+assignment: uart_id
+description: Reference solution. Answers every command with println on Serial1 at 9600 baud.
+ground_truth: { faulty: false }
+params: { student_id: "000412387", digit_sum: 25, id_hex: "64AE3" }
+responses:
+  - match: { cmd: UART, baud: 9600 }
+    replies:                       # one per READ: id_lf, sum, hex, id_crlf, unknown, id_again
+      - { text: "000412387\r\n", byte_count: 11, framing_errors: 0 }
+      - { text: "25\r\n", byte_count: 4, framing_errors: 0 }
+      - { text: "64AE3\r\n", byte_count: 7, framing_errors: 0 }
+      - { text: "000412387\r\n", byte_count: 11, framing_errors: 0 }
+      - { text: "ERR\r\n", byte_count: 5, framing_errors: 0 }
+      - { text: "000412387\r\n", byte_count: 11, framing_errors: 0 }
+expected_verdicts:
+  id_lf.text: PASS
+  id_lf.framing_errors: PASS
+  sum.text: PASS
+  sum.framing_errors: PASS
+  hex.text: PASS
+  hex.framing_errors: PASS
+  id_crlf.text: PASS
+  id_crlf.framing_errors: PASS
+  unknown.text: PASS
+  unknown.framing_errors: PASS
+  id_again.text: PASS
+  id_again.framing_errors: PASS

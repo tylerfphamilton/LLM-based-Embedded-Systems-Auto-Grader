@@ -1,0 +1,14 @@
+# benchmark/uart_id/params.yaml: per-student values (docs/decisions.md D63). Made-up IDs
+# only: every one starts with 000, so none is a real UCLA ID. The instructor works out
+# digit_sum and id_hex in advance; the grader never computes them.
+correct:           { student_id: "000412387", digit_sum: 25, id_hex: "64AE3" }
+correct_alt_style: { student_id: "000527164", digit_sum: 25, id_hex: "80B3C" }
+# copied_id's sketch prints *correct*'s ID (000412387, sum 25, hex 64AE3), not this one.
+copied_id:         { student_id: "000638205", digit_sum: 24, id_hex: "9BCFD" }
+ascii_sum:         { student_id: "000194726", digit_sum: 29, id_hex: "2F8A6" }
+lf_only:           { student_id: "000851093", digit_sum: 26, id_hex: "CFC95" }
+no_err:            { student_id: "000276548", digit_sum: 32, id_hex: "43844" }
+answers_once:      { student_id: "000903317", digit_sum: 23, id_hex: "DC895" }
+wrong_baud:        { student_id: "000369852", digit_sum: 33, id_hex: "5A4BC" }
+hex_lowercase:     { student_id: "000745619", digit_sum: 32, id_hex: "B6093" }
+usb_serial:        { student_id: "000580274", digit_sum: 26, id_hex: "8DAB2" }

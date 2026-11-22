@@ -1,0 +1,27 @@
+submission: uart_id_no_err
+assignment: uart_id
+description: Ends replies with a bare LF, and ignores unknown commands instead of replying ERR.
+ground_truth: { faulty: true, fault: no_err }
+params: { student_id: "000276548", digit_sum: 32, id_hex: "43844" }
+responses:
+  - match: { cmd: UART, baud: 9600 }
+    replies:                       # one per READ: id_lf, sum, hex, id_crlf, unknown, id_again
+      - { text: "000276548\n", byte_count: 10, framing_errors: 0 }
+      - { text: "32\n", byte_count: 3, framing_errors: 0 }
+      - { text: "43844\n", byte_count: 6, framing_errors: 0 }
+      - { text: "000276548\n", byte_count: 10, framing_errors: 0 }
+      - { text: "", byte_count: 0, framing_errors: 0 }
+      - { text: "000276548\n", byte_count: 10, framing_errors: 0 }
+expected_verdicts:
+  id_lf.text: PASS
+  id_lf.framing_errors: PASS
+  sum.text: PASS
+  sum.framing_errors: PASS
+  hex.text: PASS
+  hex.framing_errors: PASS
+  id_crlf.text: PASS
+  id_crlf.framing_errors: PASS
+  unknown.text: FAIL
+  unknown.framing_errors: PASS
+  id_again.text: PASS
+  id_again.framing_errors: PASS
