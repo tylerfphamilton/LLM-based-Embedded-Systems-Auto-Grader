@@ -1,0 +1,34 @@
+{
+  "handout": "handouts/pwm_1khz.md",
+  "handout_sha256": "fcf561dfe026c283899cfd46810c54c6468e3b6d2065d3220f6b6723485c3490",
+  "board": "Arduino Nano 33 BLE Sense, Arduino mbed core",
+  "model": "claude-sonnet-5",
+  "prompt_version": "c6d349bd",
+  "attempts": 1,
+  "tokens": {
+    "input": 1480,
+    "output": 517
+  },
+  "latency_s": 5.573,
+  "cost_usd": 0.00813,
+  "requirements": [
+    {
+      "id": "pwm_frequency",
+      "requirement": "The signal on pin D5 must have a frequency of 1 kHz."
+    },
+    {
+      "id": "pwm_duty_cycle",
+      "requirement": "The signal on pin D5 must have a duty cycle of 25%."
+    },
+    {
+      "id": "auto_start",
+      "requirement": "The PWM signal on D5 must start automatically after reset without any serial input or button press."
+    },
+    {
+      "id": "stable_after_boot",
+      "requirement": "The PWM signal on D5 must be stable (correct frequency and duty cycle) within 50 ms after reset."
+    }
+  ],
+  "errors": [],
+  "reused_from": "out/code_pwm/requirements.json"
+}

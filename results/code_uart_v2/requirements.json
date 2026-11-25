@@ -1,0 +1,63 @@
+{
+  "handout": "handouts/uart_id.md",
+  "handout_sha256": "df6ed74a8acc6c86007bd359cb6df4ef85f50b815ea263fd7132f86689ccec0e",
+  "board": "Arduino Nano 33 BLE Sense, Arduino mbed core",
+  "model": "claude-sonnet-5",
+  "prompt_version": "ef5bbd0c",
+  "attempts": 1,
+  "tokens": {
+    "input": 1622,
+    "output": 1587
+  },
+  "latency_s": 15.179,
+  "cost_usd": 0.019114,
+  "requirements": [
+    {
+      "id": "serial1_config",
+      "requirement": "The sketch configures Serial1 (pins D0/D1) for communication at 9600 baud, 8N1, instead of using the USB Serial port."
+    },
+    {
+      "id": "id_reply",
+      "requirement": "On receiving the command ID?, the board replies with the student's own 9-digit university ID, keeping any leading zeros."
+    },
+    {
+      "id": "sum_reply",
+      "requirement": "On receiving the command SUM?, the board replies with the sum of the digits of the student's ID."
+    },
+    {
+      "id": "hex_reply",
+      "requirement": "On receiving the command HEX?, the board replies with the student's ID converted to upper-case hexadecimal, with no leading zeros."
+    },
+    {
+      "id": "unknown_command_err",
+      "requirement": "On receiving any line that is not ID?, SUM?, or HEX?, the board replies with ERR."
+    },
+    {
+      "id": "line_ending_tolerance",
+      "requirement": "The board accepts command lines terminated by either \\n or \\r\\n, treating the \\r as part of the line ending rather than part of the command."
+    },
+    {
+      "id": "ignore_empty_lines",
+      "requirement": "The board ignores empty lines (lines containing only a line ending) and does not send any reply for them."
+    },
+    {
+      "id": "prompt_reply",
+      "requirement": "The board replies to each valid command within 100 ms of receiving the line ending."
+    },
+    {
+      "id": "continuous_operation",
+      "requirement": "The board keeps answering correctly to repeated commands for as long as it stays powered, not only the first time."
+    },
+    {
+      "id": "reply_terminator",
+      "requirement": "Every reply sent by the board ends with \\r\\n or \\n."
+    },
+    {
+      "id": "no_extra_output",
+      "requirement": "The board prints nothing on Serial1 other than the defined replies, with no start-up message or debug output."
+    }
+  ],
+  "errors": [],
+  "reviewed": "Reviewed copy of code_uart/requirements.json (docs/decisions.md D67): `kind` removed; kept as ordinary requirements: serial1_config; removed (how the code is written): code_commented.",
+  "reused_from": "out/code_uart/requirements_reviewed.json"
+}

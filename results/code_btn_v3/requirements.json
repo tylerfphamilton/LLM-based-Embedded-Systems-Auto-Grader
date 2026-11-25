@@ -1,0 +1,47 @@
+{
+  "handout": "handouts/button_toggle.md",
+  "handout_sha256": "be7081cbb19db385637c528726ecd587bc82f435820dcf243bad0d023c76e453",
+  "board": "Arduino Nano 33 BLE Sense, Arduino mbed core",
+  "model": "claude-sonnet-5",
+  "prompt_version": "ef5bbd0c",
+  "attempts": 1,
+  "tokens": {
+    "input": 1501,
+    "output": 1473
+  },
+  "latency_s": 14.435,
+  "cost_usd": 0.017732,
+  "requirements": [
+    {
+      "id": "led_off_after_reset",
+      "requirement": "The on-board LED (pin D13) is off immediately after the board resets or powers up."
+    },
+    {
+      "id": "button_toggles_led",
+      "requirement": "Each press of the button on pin D2 toggles the LED: the first press turns it on, the next press turns it off, and so on."
+    },
+    {
+      "id": "led_reacts_quickly",
+      "requirement": "The LED changes state within 20 ms of a valid button press, so the user notices no delay."
+    },
+    {
+      "id": "debounce_single_toggle",
+      "requirement": "A single physical button press toggles the LED exactly once, even though the contacts bounce."
+    },
+    {
+      "id": "serial_print_state",
+      "requirement": "On every toggle, the board prints the new LED state, either ON or OFF, on its own line over Serial1 at 9600 baud."
+    },
+    {
+      "id": "uses_serial1_not_usb",
+      "requirement": "The code uses the Serial1 object (pins D0/D1) configured at 9600 baud for the state messages, not the USB Serial port."
+    },
+    {
+      "id": "pin_d2_input_pullup",
+      "requirement": "The code configures pin D2 as INPUT_PULLUP to read the button, since there is no external resistor."
+    }
+  ],
+  "errors": [],
+  "reviewed": "Reviewed copy of code_btn/requirements.json (docs/decisions.md D67): `kind` removed; kept as ordinary requirements: uses_serial1_not_usb, pin_d2_input_pullup; removed (how the code is written): debounce_without_delay, code_is_commented.",
+  "reused_from": "out/code_btn/requirements_reviewed.json"
+}

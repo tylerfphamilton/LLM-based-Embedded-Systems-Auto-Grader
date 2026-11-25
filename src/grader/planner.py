@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -144,11 +145,11 @@ class PlanResult:
         }
 
 
-def unwrap_plan(raw: Any) -> tuple[Any, bool]:
+def unwrap_plan(raw: Any, key: str = "plan") -> tuple[Any, bool]:
     """Models often nest the plan as ``{"plan": {...}}``. Take the inner object, so that
     formatting slip does not cost a whole retry. Returns (plan, whether it was unwrapped)."""
-    if isinstance(raw, dict) and set(raw) == {"plan"} and isinstance(raw["plan"], dict):
-        return raw["plan"], True
+    if isinstance(raw, dict) and set(raw) == {key} and isinstance(raw[key], dict):
+        return raw[key], True
     return raw, False
 
 
@@ -192,6 +193,28 @@ def generate_plan(
 
     Raises ``LLMError`` if a call fails outright.
     """
+    return repair_loop(
+        client,
+        first,
+        lambda raw: check_draft(raw, name, pinmap, params),
+        max_attempts=max_attempts,
+    )
+
+
+def repair_loop(
+    client: LLMClient,
+    first: LLMRequest,
+    check: Callable[[Any], list[str]],
+    *,
+    what: str = "plan",
+    max_attempts: int = MAX_ATTEMPTS,
+) -> PlanResult:
+    """The validate-and-repair loop for any tool answer (a plan, a requirement list).
+
+    ``check(tool_input)`` returns error sentences; they go back as an ``is_error``
+    tool_result. An answer nested as ``{what: {...}}`` is unwrapped first.
+    """
+    tool = (first.tool or {}).get("name", "")
     messages = list(first.messages)
     responses: list[LLMResponse] = []
     errors: list[str] = []
@@ -201,22 +224,20 @@ def generate_plan(
             resp = client.complete(replace(first, messages=list(messages)))
         except NoToolCallError as exc:
             responses.append(exc.response)
-            errors = [f"plan: no {PLAN_TOOL} call in the answer ({exc})."]
+            errors = [f"{what}: no {tool} call in the answer ({exc})."]
             if content := exc.response.raw.get("content"):
                 messages.append({"role": "assistant", "content": content})
-            messages.append(
-                {"role": "user", "content": f"Call {PLAN_TOOL} with the complete plan."}
-            )
+            messages.append({"role": "user", "content": f"Call {tool} with the complete {what}."})
             continue
         responses.append(resp)
-        raw, unwrapped = unwrap_plan(resp.tool_input)
+        raw, unwrapped = unwrap_plan(resp.tool_input, what)
         if unwrapped:
-            notes.append(f"attempt {attempt}: plan was nested under 'plan'; unwrapped it")
-        errors = check_draft(raw, name, pinmap, params)
+            notes.append(f"attempt {attempt}: {what} was nested under '{what}'; unwrapped it")
+        errors = check(raw)
         messages.append({"role": "assistant", "content": resp.raw.get("content", [])})
         if not errors:
             return PlanResult(True, raw, [], attempt, responses, messages, notes)
-        block = tool_use_block(resp.raw, PLAN_TOOL) or {}
+        block = tool_use_block(resp.raw, tool) or {}
         messages.append(
             {
                 "role": "user",

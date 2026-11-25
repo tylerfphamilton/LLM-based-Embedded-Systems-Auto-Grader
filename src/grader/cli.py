@@ -1,5 +1,5 @@
 """Command-line interface: ``grader export-schema | validate-plan | run | batch |
-make-plan | approve-plan``."""
+make-plan | approve-plan | code-grade``."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from grader.batch import format_table, grade_scenario, require_params, run_batch
 from grader.fake_rig import load_scenario
 from grader.feedback import FeedbackGenerator, LLMFeedback
 from grader.llm import (
+    MODEL_PLACEHOLDER,
     AnthropicClient,
     LLMError,
     load_llm_config,
@@ -493,6 +494,72 @@ def approve_plan_cmd(
     _load_plan_or_exit(plan, pinmap)
     meta = approve(plan, by, datetime.now(UTC))
     typer.echo(f"{meta_path(plan)}: approved by {by} (sha256 {meta['plan_sha256'][:12]})")
+
+
+@app.command("code-grade")
+def code_grade_cmd(
+    handout: Annotated[Path, typer.Option(help="Assignment handout (Markdown or text).")],
+    submissions: Annotated[
+        Path, typer.Option(help="Directory of sketch folders X/X.ino (+ labels.yaml, params.yaml).")
+    ],
+    out: Annotated[Path, typer.Option(help="Output directory.")] = Path("out/code"),
+    requirements: Annotated[
+        Path | None, typer.Option(help="Reuse a saved requirements.json (no requirements call).")
+    ] = None,
+    model: Annotated[str | None, typer.Option(help="Model ID (default: model.code_grade).")] = None,
+    llm_config: LLMConfigOpt = DEFAULT_LLM_CONFIG,
+) -> None:
+    """Baseline: an LLM grades each sketch by reading the code (no rig, no plan; D66)."""
+    from grader import code_grade as cg
+    from grader.batch import discover_submissions, load_labels, load_params
+
+    def stop(problem: str, code: int = 2):
+        typer.echo(f"error: {problem}", err=True)
+        raise typer.Exit(code)
+
+    cfg = load_llm_config(llm_config)
+    model_id = model or cfg.code_grade_model
+    if not model_id or model_id == MODEL_PLACEHOLDER:
+        stop(f"{llm_config}: 'model' is still the placeholder; set a current Claude model ID.")
+    try:
+        require_api_key()
+    except LLMError as exc:
+        stop(str(exc))
+    if not submissions.is_dir():
+        stop(f"{submissions} is not a directory")
+    subs = discover_submissions(submissions)
+    if not subs:
+        stop(f"no sketch folders (X/X.ino) in {submissions}")
+    try:
+        params = load_params(submissions)
+        reused = cg.load_requirements(requirements) if requirements else None
+    except (ValueError, OSError) as exc:
+        stop(str(exc))
+    client = AnthropicClient.from_config(cfg)
+    if reused is not None:
+        doc = reused
+        cg.write_requirements(doc, None, out)
+    else:
+        try:
+            doc, result = cg.make_requirements(client, handout, cfg, model_id)
+        except LLMError as exc:
+            stop(str(exc))
+        path = cg.write_requirements(doc, result, out)
+        if not result.ok:
+            _print_errors(Path(f"requirements (after {result.attempts} attempts)"), result.errors)
+            stop(f"no valid requirement list; see {path.with_name('requirements.log.json')}", 1)
+        typer.echo(
+            f"requirements: {path} ({len(doc['requirements'])}, {result.attempts} attempt(s))"
+        )
+    rows, metrics = cg.run_code_grade(
+        client, cfg, model_id, handout.read_text(encoding="utf-8"), doc["requirements"], subs,
+        load_labels(submissions), params, out,
+    )  # fmt: skip
+    typer.echo(f"\nCode-only baseline: {model_id}  ({len(rows)} submissions)\n")
+    typer.echo(cg.format_table(rows, metrics, doc))
+    typer.echo(
+        f"\nreports: {out / '<submission>' / 'code_grade.md'}   summary: {out / 'summary.csv'}"
+    )
 
 
 if __name__ == "__main__":

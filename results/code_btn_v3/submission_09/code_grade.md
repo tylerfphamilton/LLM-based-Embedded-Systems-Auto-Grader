@@ -1,0 +1,13 @@
+# Code-only grade: submission_09
+
+> Baseline: claude-sonnet-5 read the code only (no hardware, no measurement).
+
+| Requirement | Verdict | Reason |
+|---|---|---|
+| The on-board LED (pin D13) is off immediately after the board resets or powers up. | PASS | setup() calls digitalWrite(LED\_PIN, LOW) at line 23 before any loop iteration runs, and ledOn starts false, so the LED is off immediately after reset. (submission\_09.ino:23) |
+| Each press of the button on pin D2 toggles the LED: the first press turns it on, the next press turns it off, and so on. | PASS | In loop(), once the debounced state transitions to LOW (a press), ledOn is flipped with ledOn = !ledOn (line 39), so each press alternates the LED state and this is written out every iteration via digitalWrite at line 44. (submission\_09.ino:36-44) |
+| The LED changes state within 20 ms of a valid button press, so the user notices no delay. | PASS | The debounce window is only DEBOUNCE\_MS = 5 ms (line 13), and the LED output is updated unconditionally at the end of the very same loop iteration where the toggle happens (line 44), so the visible reaction time is on the order of a few ms, well under 20 ms. (submission\_09.ino:44) |
+| A single physical button press toggles the LED exactly once, even though the contacts bounce. | PASS | The code uses a standard timer-reset debounce: every raw change resets rawChangeMs (lines 30-33), and the debounced state (and thus the toggle) is only updated once the raw reading has been stable for DEBOUNCE\_MS, so a single bouncing press produces exactly one toggle. (submission\_09.ino:30-41) |
+| On every toggle, the board prints the new LED state, either ON or OFF, on its own line over Serial1 at 9600 baud. | FAIL | Serial1.println(ledOn ? "ON" : "OFF") at line 45 runs unconditionally on every loop iteration (not only when a toggle actually occurs), so the serial port is flooded with repeated ON/OFF lines continuously rather than reporting just each change as required. (submission\_09.ino:45) |
+| The code uses the Serial1 object (pins D0/D1) configured at 9600 baud for the state messages, not the USB Serial port. | PASS | Serial1.begin(9600) is called in setup (line 24) and only Serial1.println is used for state messages (line 45); the USB Serial object is never referenced. (submission\_09.ino:24) |
+| The code configures pin D2 as INPUT\_PULLUP to read the button, since there is no external resistor. | PASS | pinMode(PIN\_BUTTON, INPUT\_PULLUP) is called with PIN\_BUTTON = 2 (lines 11 and 21), correctly configuring D2 with the internal pull-up as required. (submission\_09.ino:21) |

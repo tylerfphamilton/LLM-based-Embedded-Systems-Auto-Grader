@@ -1,0 +1,10 @@
+# Code-only grade: submission_03
+
+> Baseline: claude-sonnet-5 read the code only (no hardware, no measurement).
+
+| Requirement | Verdict | Reason |
+|---|---|---|
+| The signal on pin D5 must have a frequency of 1 kHz. | FAIL | The code assumes the nRF52840 PWM peripheral is clocked from the 64 MHz CPU clock (CORE\_CLK\_HZ = 64000000UL, line 15), but the PWM module's PWM\_CLK is actually derived from the fixed 16 MHz HFCLK, not the 64 MHz core clock. With PRESCALER\_DIV\_16 the real tick rate is 16MHz/16 = 1 MHz, so the computed COUNTERTOP of 4000 (line 19, meant for a 4 MHz tick) actually yields 1MHz/4000 = 250 Hz, not the required 1 kHz - a 4x error. (submission\_03.ino:15-19) |
+| The signal on pin D5 must have a duty cycle of 25%. | FAIL | The sequence value is built as PWM\_DUTY\_VAL \| 0x8000 (line 22), which sets the nRF52 PWM COMPARE polarity bit. With polarity bit 1, the output starts LOW and goes HIGH once the counter reaches the compare value, so the compare value (TOP/4 = 1000) defines the LOW time, not the HIGH time; the actual HIGH (duty) time becomes (TOP-1000)/TOP = 75%, not the intended 25%. (submission\_03.ino:20-22) |
+| The PWM signal on D5 must start automatically after reset without any serial input or button press. | PASS | All PWM configuration (PSEL, ENABLE, MODE, PRESCALER, COUNTERTOP, SEQ) and the TASKS\_SEQSTART\[0\] trigger are performed unconditionally inside setup(), with no serial read, button check, or other wait condition, so the PWM output starts automatically right after reset. (submission\_03.ino:24-43) |
+| The PWM signal on D5 must be stable (correct frequency and duty cycle) within 50 ms after reset. | FAIL | Although the peripheral is started immediately in setup() with TASKS\_SEQSTART\[0\]=1 (well within 50 ms of reset), the configured frequency (~250 Hz instead of 1 kHz, due to the wrong 64 MHz clock assumption) and duty cycle (~75% instead of 25%, due to the inverted polarity bit) are incorrect from the very first cycle, so the signal never settles to the required correct frequency/duty cycle, not just within 50 ms but at any time. (submission\_03.ino:19-22) |

@@ -1,0 +1,13 @@
+# Code-only grade: submission_08
+
+> Baseline: claude-sonnet-5 read the code only (no hardware, no measurement).
+
+| Requirement | Verdict | Reason |
+|---|---|---|
+| The on-board LED (pin D13) is off immediately after the board resets or powers up. | PASS | In setup(), pinMode(LED\_PIN, OUTPUT) is followed by digitalWrite(LED\_PIN, LOW), so the LED is explicitly driven off at startup. (submission\_08.ino:21-22) |
+| Each press of the button on pin D2 toggles the LED: the first press turns it on, the next press turns it off, and so on. | PASS | The debounce block flips the boolean 'lit' and writes it to LED\_PIN each time the debounced btnState settles to LOW, which happens once per press, so consecutive presses alternate the LED on/off. (submission\_08.ino:35-41) |
+| The LED changes state within 20 ms of a valid button press, so the user notices no delay. | PASS | loop() contains no blocking delay() calls; the LED is updated as soon as the 5 ms DEBOUNCE\_MS window elapses (digitalWrite happens immediately in the same loop iteration), well under the 20 ms threshold. (submission\_08.ino:10,35-39) |
+| A single physical button press toggles the LED exactly once, even though the contacts bounce. | PASS | The code tracks the last raw sample and the time it last changed (sampleChangedAt); it only commits a new btnState (and toggles) once the raw reading has been stable for DEBOUNCE\_MS, which filters out bounce so a single press yields a single stable LOW transition. (submission\_08.ino:30-41) |
+| On every toggle, the board prints the new LED state, either ON or OFF, on its own line over Serial1 at 9600 baud. | PASS | Serial1.println(lit ? "ON" : "OFF") is called exactly once per toggle, immediately after updating 'lit' and the LED, printing the new state on its own line. (submission\_08.ino:40) |
+| The code uses the Serial1 object (pins D0/D1) configured at 9600 baud for the state messages, not the USB Serial port. | PASS | The code calls Serial1.begin(9600) in setup and Serial1.println(...) in loop; the USB Serial object is never used. (submission\_08.ino:24,40) |
+| The code configures pin D2 as INPUT\_PULLUP to read the button, since there is no external resistor. | FAIL | The code configures the pin with pinMode(BTN\_PIN, INPUT) and then digitalWrite(BTN\_PIN, HIGH), an old AVR-style trick to enable the pull-up, instead of calling pinMode(BTN\_PIN, INPUT\_PULLUP) as required; on this mbed-based Nano 33 BLE Sense core, pull resistors are selected via the pin-mode configuration, not by writing to the GPIO data register of an input pin, so this does not reliably enable the internal pull-up. (submission\_08.ino:18-19) |

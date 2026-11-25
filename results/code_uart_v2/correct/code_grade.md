@@ -1,0 +1,17 @@
+# Code-only grade: correct
+
+> Baseline: claude-sonnet-5 read the code only (no hardware, no measurement).
+
+| Requirement | Verdict | Reason |
+|---|---|---|
+| The sketch configures Serial1 (pins D0/D1) for communication at 9600 baud, 8N1, instead of using the USB Serial port. | PASS | setup() calls Serial1.begin(9600) (default 8N1) and all reads/writes use Serial1, not the USB Serial port. (correct.ino:34) |
+| On receiving the command ID?, the board replies with the student's own 9-digit university ID, keeping any leading zeros. | PASS | ID? is matched in handleCommand and replies with the STUDENT\_ID string verbatim, which preserves any leading zeros since it is stored as a char array, not an integer. (correct.ino:21-22) |
+| On receiving the command SUM?, the board replies with the sum of the digits of the student's ID. | PASS | digitSum() iterates over each character of STUDENT\_ID and sums (char - '0'), correctly computing the digit sum, which is printed for SUM?. (correct.ino:11-17,23-24) |
+| On receiving the command HEX?, the board replies with the student's ID converted to upper-case hexadecimal, with no leading zeros. | PASS | HEX? parses STUDENT\_ID as a decimal number with strtoul(..., 10) and prints it with Serial1.println(value, HEX), which Arduino's Print implementation renders in upper-case with no leading zeros. (correct.ino:25-27) |
+| On receiving any line that is not ID?, SUM?, or HEX?, the board replies with ERR. | PASS | The final else branch in handleCommand replies ERR for any command that isn't ID?, SUM?, or HEX?. (correct.ino:28-29) |
+| The board accepts command lines terminated by either \\n or \\r\\n, treating the \\r as part of the line ending rather than part of the command. | PASS | In loop(), a '\\r' character is simply skipped (continue) and only '\\n' terminates/processes the line, so both \\n and \\r\\n endings work and \\r never becomes part of the command. (correct.ino:41-50) |
+| The board ignores empty lines (lines containing only a line ending) and does not send any reply for them. | PASS | On '\\n', handleCommand is only called if len \> 0, so an empty line (immediate \\n or \\r\\n) produces no reply, and len is reset either way. (correct.ino:44-50) |
+| The board replies to each valid command within 100 ms of receiving the line ending. | PASS | loop() processes available serial bytes immediately with no delays and replies synchronously as soon as a line terminator is seen, so replies are sent essentially immediately after the line ending arrives. (correct.ino:37-55) |
+| The board keeps answering correctly to repeated commands for as long as it stays powered, not only the first time. | PASS | loop() runs indefinitely, resets len to 0 after each command, and keeps re-entering the while loop to process further input, so the board keeps responding to subsequent commands. (correct.ino:37-55) |
+| Every reply sent by the board ends with \\r\\n or \\n. | PASS | All replies use Serial1.println(), which appends \\r\\n after the content for every branch (ID?, SUM?, HEX?, ERR). (correct.ino:22,24,27,29) |
+| The board prints nothing on Serial1 other than the defined replies, with no start-up message or debug output. | PASS | setup() only calls Serial1.begin and contains no startup message; the only Serial1 writes anywhere in the sketch are the four reply statements inside handleCommand, with no debug prints. (correct.ino:33-35) |

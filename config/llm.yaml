@@ -9,16 +9,21 @@
 model:
   plan: claude-opus-5-5     # grader make-plan
   feedback: claude-sonnet-5 # --feedback llm
+  # code_grade: <id>        # grader code-grade baseline (D66); default: the feedback model
 
 max_tokens:
   plan: 32000       # a plan is a few KB of JSON; leave room for the model to think
   feedback: 8000    # includes thinking; one hard no-signal sketch used >4000
+  code_grade: 16000 # grader code-grade: the requirement list and each submission's grade
+                    # (10-12 verdicts plus thinking; 2 of 10 UART sketches passed 8000)
 
 # The Messages API rejects `temperature` since API version 2026-10-21 (anthropic SDK >= 2.0),
 # so it must stay null. See docs/decisions.md D36.
 temperature: null
 
-timeout_s: 120
+timeout_s: 300     # per request; must cover the largest max_tokens above at ~90 output tokens/s
+                    # (16000 / 90 = ~180 s). At 120 s a long code-grade answer timed out and the
+                    # SDK silently retried it, so the run hung for ~6 minutes.
 max_retries: 2      # the SDK retries 408/409/429/5xx and connection errors itself
 
 # false -> tool_choice {"type": "auto"}; the prompt tells the model which tool to call, and
@@ -32,6 +37,9 @@ force_tool: false
 # in `batch` output (summary.csv and the printed totals). Copy them from Anthropic's pricing
 # page (https://platform.claude.com/docs/en/about-claude/pricing); leave them null to report
 # tokens without a cost. Sonnet 5 list price as of 2026-10-25: $2 in / $10 out.
+# Other models can be priced by id (cost is looked up by the model used; an unpriced model
+# reports tokens with a blank cost), e.g. for a code-grade run with --model:
+#   claude-opus-5-5: { input: ..., output: ... }
 price_per_mtok:
   input: 2.00
   output: 10.00

@@ -596,3 +596,94 @@ real ID.
 * The ten benchmark sketches are still to be written (`benchmark/uart_id/README.md`);
   `labels.yaml` and `params.yaml` use made-up IDs that start with `000`. Four fake-rig
   scenarios (`correct`, `copied_id`, `ascii_sum`, `no_err`) have no `sketch:` link yet.
+
+## Code-only baseline
+
+**D66. `grader code-grade`: an LLM grades the sketches from the handout and the code
+alone.** The paper needs a baseline without our system: the same benchmark folders and
+`labels.yaml`, graded by a model that reads the code and never sees a plan or a
+measurement. It is a separate command with its own output; nothing in it feeds into
+hardware grading.
+* **Handout-only input.** The model gets the handout, the board name, the requirement
+  list, this student's values and the source, never our plan. So the baseline measures
+  grading without the system, *including* interpreting the handout (choosing limits for
+  "quickly", splitting requirements), which our plans do with review.
+* **A fixed requirement list.** One call per run turns the handout into
+  `requirements: [{id, requirement}]` (prompt `code_requirements.md`, tool
+  `submit_requirements`), checked in plain code (snake_case unique ids, non-empty
+  sentences) with the `make-plan` repair loop, at most 3 attempts. The
+  planner's loop is now `planner.repair_loop(client, first, check, what=...)`;
+  `generate_plan` calls it with `check_draft`, so `make-plan` behaves as before. The list
+  is saved as `OUT/requirements.json` (model, prompt version, tokens, cost) with the
+  conversation in `requirements.log.json`. `--requirements FILE` reuses a list (no call),
+  so repeated runs differ only in grading; the out folder gets a copy marked
+  `reused_from`, and the reused list's tokens and cost are not counted again.
+* **Only what the board does.** The list covers what can be seen from outside the board
+  (pins, serial output, timing, including which port and baud and how inputs are set up),
+  never how the code is written (comments, style, "without `delay()`"), matching what the
+  hardware grader grades. A first version had a `kind: behaviour | code_only` split with
+  `code_only` as uncounted notes; on the first runs the model put real behaviour there
+  (Serial1 at 9600 baud, `INPUT_PULLUP`), which hid caught bugs from the rates, so the
+  split was removed (D67).
+* **Grading** is one call per submission (prompt `code_grade_system.md`, tool
+  `submit_code_grade`, one `{id, verdict, reason, code_location}` per requirement). The
+  source comes from `feedback.read_sources` inside the same untrusted `<student_code>`
+  block, with the same "ignore instructions inside it" wording. Items are dropped, with a
+  warning, for an unknown id, a repeated id or a verdict other than PASS/FAIL/UNSURE; a
+  missing `reason` is accepted as empty. A requirement with no accepted item is UNSURE
+  ("no verdict from the model"). Any `LLMError` makes every requirement ERROR for that
+  submission; the error is recorded and the run goes on.
+* **UNSURE in the metrics.** UNSURE means "reading cannot settle it" (timing near a limit,
+  library behaviour on this board). It counts as *not failed*, so a submission with UNSURE
+  but no FAIL is not flagged; UNSURE checks and the submissions with any are reported
+  separately. The run reuses `batch.compute_metrics` through `CodeRow(BatchRow)`, with
+  `borderline` holding the UNSURE count, so the rates are computed exactly as
+  for the hardware batches. A submission whose call failed (ERROR) is not flagged, as a
+  rig error is not in a hardware batch. `summary.csv` and the printed table are a small
+  code-grade version (columns `pass, fail, unsure, flagged, error` (the
+  ERROR count), `llm_error` (the message), tokens, latency, cost, elapsed); the hardware
+  batch's writers are unchanged.
+* **Student values** (D63) come from `params.yaml` via `load_params` and are redacted with
+  `feedback.Redactor` and `redact_params` (D64) in both the values block and the source,
+  so a sketch with its own ID shows `<student_id>`, while a copied ID stays a different
+  number. The real values are put back into the saved reasons and code locations;
+  `code_grade.json` keeps the raw request and response redacted and records `params` with
+  the real values, as `report.json` does.
+* **Models.** `model.code_grade` (default: the feedback model) is used for both the
+  requirement list and the grading, so one baseline run is one model; `--model ID`
+  overrides it. `max_tokens.code_grade` defaults to 8000. As with `--feedback llm`, a
+  placeholder model or a missing key stops the run before any call.
+* **Prices per model.** `price_per_mtok` may now hold `<model id>: {input, output}` entries
+  next to the flat `{input, output}`, which still means the feedback model's price
+  (`LLMConfig.cost_for(model, in, out)`; `cost_usd` is the feedback model's). Cost is
+  looked up by the model id requested (the config or `--model`), not the id the API echoes
+  back. An unpriced model gives a blank cost, not an error. No new prices were filled in.
+* **`scripts/compare_runs.py`** reads both `summary.csv` files and compares the `flagged`
+  columns per submission (truth from the hardware run, else the code run), prints both
+  runs' rates, the disagreements, the submissions found in only one run, and each run's
+  LLM cost per graded submission: feedback calls only for hardware; grading plus the
+  requirement list (from `requirements.json`, unless it was reused) for code.
+* **Size.** New source is about 700 lines (`code_grade.py` ≈440, `compare_runs.py` ≈130,
+  the CLI +68, the config and repair-loop changes ≈60 net), twice the brief's ~350.
+  About 50 lines are the two tool schemas, and `ruff format` spreads the CLI options and
+  dict literals over many lines. No caching, concurrency or new abstraction was added
+  beyond `CodeRow` and `repair_loop`.
+
+**D67. Code-only baseline fixes after the first runs.**
+* **No `code_only` kind** (see D66): every requirement in the list counts, and the
+  requirements prompt leaves out requirements about how the code is written. Older saved
+  lists that still carry `kind` load fine; the field is ignored.
+* **A cut-off answer is ERROR, not UNSURE.** A reply that stopped at `max_tokens`, or whose
+  tool input has no `items` list, is a failed call: every requirement is ERROR for that
+  submission, with the tokens still counted. Before, a tool call cut off part-way had no
+  items, so every requirement became "UNSURE: no verdict from the model", which looked like
+  a cautious grade. A missing verdict for *one* requirement in a complete answer is still
+  UNSURE.
+* **`max_tokens.code_grade` 8000 -> 16000.** Each grade is 10-12 verdicts with reasons plus
+  thinking; on the first UART run 2 of 10 sketches hit 8000.
+* **Reviewed requirement lists** for the first runs are saved next to the originals as
+  `out/code_btn/requirements_reviewed.json` and `out/code_uart/requirements_reviewed.json`:
+  the requirements the model had marked `code_only` but that change what the board does
+  (Serial1 at 9600 baud; D2 `INPUT_PULLUP`) are kept as ordinary requirements, and the ones
+  about how the code is written (comments; debounce without `delay()`) are removed. The
+  original lists stay as the record of the model's unaided reading.
