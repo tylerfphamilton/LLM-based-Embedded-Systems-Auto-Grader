@@ -51,3 +51,19 @@ def test_live_feedback(pinmap, rig_profile) -> None:
     assert r.verdicts() == base.verdicts()
     assert r.llm is not None and r.llm.error is None, r.llm
     assert r.checks[0].feedback, r.llm.warnings
+
+
+def test_live_code_grade_correct_button(tmp_path) -> None:
+    from grader import code_grade as cg
+    from grader.flasher import Submission
+
+    model = CFG.code_grade_model
+    client = AnthropicClient.from_config(CFG)
+    doc, result = cg.make_requirements(client, ROOT / "handouts" / "button_toggle.md", CFG, model)
+    assert result.ok, result.errors
+    handout = (ROOT / "handouts" / "button_toggle.md").read_text(encoding="utf-8")
+    sub = Submission("correct", ROOT / "benchmark" / "button_toggle" / "correct")
+    graded = cg.grade_submission(client, CFG, model, handout, doc["requirements"], sub)
+    assert graded["llm"]["error"] is None, graded["llm"]["error"]
+    verdicts = {q["verdict"] for q in graded["requirements"] if q["kind"] == "behaviour"}
+    assert verdicts <= {"PASS", "FAIL", "UNSURE"} and verdicts

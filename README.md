@@ -133,6 +133,20 @@ before anything is graded. `config/llm.yaml` `redact_params` lists the values re
 correct: { student_id: "000412387", digit_sum: 25, id_hex: "64AE3" }
 ```
 
+## Code-only baseline
+
+For comparison only: an LLM grades the same sketch folders from the handout and the code
+alone, with no rig and no plan (`docs/decisions.md` D66). It first turns the handout into
+a requirement list (`OUT/requirements.json`; reuse it with `--requirements FILE`), then
+gives each requirement PASS, FAIL or UNSURE per submission. Like the hardware grader, it
+only lists what the board does, not how the code is written. The model is
+`model.code_grade` in `config/llm.yaml` (default: the feedback model) or `--model ID`.
+
+```powershell
+grader code-grade --handout handouts/button_toggle.md --submissions benchmark/button_toggle --out out/code_btn
+python scripts/compare_runs.py --hw out/btn17_final_button_toggle_opus_c --code out/code_btn
+```
+
 ## Adding an assignment
 
 No Python changes:

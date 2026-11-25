@@ -74,18 +74,33 @@ class LLMConfig:
     price_input_per_mtok: float | None = None  # USD per million input tokens
     price_output_per_mtok: float | None = None  # USD per million output tokens
     redact_params: tuple[str, ...] = ("student_id",)  # replaced by <name> before LLM calls
+    code_grade_model_id: str | None = None  # grader code-grade; default: the feedback model
+    code_grade_max_tokens: int = 16000
+    # model id -> (input, output) USD per million tokens (D66); the flat price above is the
+    # feedback model's.
+    prices: dict[str, tuple[float, float]] = field(default_factory=dict, hash=False)
+
+    def cost_for(self, model: str, input_tokens: int, output_tokens: int) -> float | None:
+        """List-price cost of one call to ``model``, or None when its price is unknown."""
+        price = self.prices.get(model)
+        if price is None and model == self.model:
+            flat = (self.price_input_per_mtok, self.price_output_per_mtok)
+            price = None if None in flat else flat  # type: ignore[assignment]
+        if price is None:
+            return None
+        return (input_tokens * price[0] + output_tokens * price[1]) / 1_000_000
 
     def cost_usd(self, input_tokens: int, output_tokens: int) -> float | None:
-        """List-price cost of one call, or None when prices are not configured."""
-        if self.price_input_per_mtok is None or self.price_output_per_mtok is None:
-            return None
-        return (
-            input_tokens * self.price_input_per_mtok + output_tokens * self.price_output_per_mtok
-        ) / 1_000_000
+        """List-price cost of one feedback call, or None when prices are not configured."""
+        return self.cost_for(self.model, input_tokens, output_tokens)
 
     @property
     def planner_model(self) -> str:
         return self.plan_model or self.model
+
+    @property
+    def code_grade_model(self) -> str:
+        return self.code_grade_model_id or self.model
 
     def check(self) -> None:
         for name in dict.fromkeys([self.model, self.planner_model]):
@@ -101,9 +116,18 @@ def load_llm_config(path: str | Path) -> LLMConfig:
     mt = data.get("max_tokens") or {}
     price = data.get("price_per_mtok") or {}
     model = data.get("model")
-    # `model: X` is used for everything; `model: {plan: X, feedback: Y}` splits them.
+    # `model: X` is used for everything; `model: {plan: X, feedback: Y, code_grade: Z}`
+    # splits them (plan and code_grade default to the feedback model).
     plan = model.get("plan") if isinstance(model, dict) else None
+    code_grade = model.get("code_grade") if isinstance(model, dict) else None
     model = model.get("feedback") if isinstance(model, dict) else model
+    # `price_per_mtok: {input, output}` prices the feedback model; any other key is a model
+    # id with its own {input, output}.
+    prices = {
+        str(k): (float(v["input"]), float(v["output"]))
+        for k, v in price.items()
+        if isinstance(v, dict) and v.get("input") is not None and v.get("output") is not None
+    }
     return LLMConfig(
         model=str(model or MODEL_PLACEHOLDER),
         plan_model=str(plan) if plan else None,
@@ -116,6 +140,9 @@ def load_llm_config(path: str | Path) -> LLMConfig:
         price_input_per_mtok=_opt_float(price.get("input")),
         price_output_per_mtok=_opt_float(price.get("output")),
         redact_params=tuple(str(p) for p in data.get("redact_params", ["student_id"]) or []),
+        code_grade_model_id=str(code_grade) if code_grade else None,
+        code_grade_max_tokens=int(mt.get("code_grade", 16000)),
+        prices=prices,
     )
 
 

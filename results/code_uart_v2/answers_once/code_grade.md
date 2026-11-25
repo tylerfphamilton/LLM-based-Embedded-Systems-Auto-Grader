@@ -1,0 +1,17 @@
+# Code-only grade: answers_once
+
+> Baseline: claude-sonnet-5 read the code only (no hardware, no measurement).
+
+| Requirement | Verdict | Reason |
+|---|---|---|
+| The sketch configures Serial1 (pins D0/D1) for communication at 9600 baud, 8N1, instead of using the USB Serial port. | PASS | The sketch calls Serial1.begin(9600) in setup(), which uses the Serial1 UART (D0/D1) with default 8N1 framing, not the USB Serial port. (answers\_once.ino:23) |
+| On receiving the command ID?, the board replies with the student's own 9-digit university ID, keeping any leading zeros. | PASS | The ID\[\] string literal holds the student's ID (preserving any leading zeros since it's stored as a string), and Serial1.println(ID) is sent when cmd == "ID?". (answers\_once.ino:8,12) |
+| On receiving the command SUM?, the board replies with the sum of the digits of the student's ID. | PASS | For cmd == "SUM?" the code sends Serial1.println(23), matching the student's digit\_sum value of 23. (answers\_once.ino:14) |
+| On receiving the command HEX?, the board replies with the student's ID converted to upper-case hexadecimal, with no leading zeros. | PASS | For cmd == "HEX?" the code sends Serial1.println("DC895"), matching the student's id\_hex value DC895. (answers\_once.ino:16) |
+| On receiving any line that is not ID?, SUM?, or HEX?, the board replies with ERR. | PASS | The else branch of sendReply() sends "ERR" for any command that isn't ID?, SUM?, or HEX?. (answers\_once.ino:17-18) |
+| The board accepts command lines terminated by either \\n or \\r\\n, treating the \\r as part of the line ending rather than part of the command. | PASS | cmd.trim() strips any trailing \\r left after readStringUntil('\\n'), so both \\n and \\r\\n line endings are accepted and treated as line endings rather than part of the command. (answers\_once.ino:29-30) |
+| The board ignores empty lines (lines containing only a line ending) and does not send any reply for them. | PASS | The while (cmd.length() == 0) loop keeps reading and trimming lines, only exiting (and calling sendReply) once a non-empty line is found, so blank lines produce no reply. (answers\_once.ino:27-32) |
+| The board replies to each valid command within 100 ms of receiving the line ending. | FAIL | Only the very first command received during setup() is ever answered; after setup() returns, loop() is empty and never reads Serial1 again, so any subsequent valid command never gets a reply at all (not just late, but never), violating promptness for every command. (answers\_once.ino:36-37) |
+| The board keeps answering correctly to repeated commands for as long as it stays powered, not only the first time. | FAIL | The command-processing logic lives entirely inside setup(), which runs once; loop() is empty, so the board answers only the single command it happened to receive during setup and stops responding afterward. (answers\_once.ino:22-37) |
+| Every reply sent by the board ends with \\r\\n or \\n. | PASS | All replies are sent with Serial1.println(), which appends "\\r\\n" by default on Arduino. (answers\_once.ino:12-18) |
+| The board prints nothing on Serial1 other than the defined replies, with no start-up message or debug output. | PASS | The sketch never calls Serial1.print/println outside of sendReply()'s four branches, and the USB Serial object is not used at all, so no startup or debug output is printed. (answers\_once.ino:10-20) |

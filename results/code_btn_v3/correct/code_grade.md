@@ -1,0 +1,13 @@
+# Code-only grade: correct
+
+> Baseline: claude-sonnet-5 read the code only (no hardware, no measurement).
+
+| Requirement | Verdict | Reason |
+|---|---|---|
+| The on-board LED (pin D13) is off immediately after the board resets or powers up. | FAIL | The code calls digitalWrite(LED\_PIN, LOW) in setup() where LED\_PIN is LED\_BUILTIN (D13). On the Nano 33 BLE Sense the on-board LED is wired active-low (LOW turns it on, HIGH turns it off), so writing LOW at startup actually turns the LED ON rather than off. (correct.ino:17) |
+| Each press of the button on pin D2 toggles the LED: the first press turns it on, the next press turns it off, and so on. | FAIL | The toggle logic writes digitalWrite(LED\_PIN, ledOn ? HIGH : LOW), assuming HIGH means on. Because the Nano 33 BLE's built-in LED is active-low, the first press (ledOn becomes true, pin set HIGH) actually turns the physical LED off instead of on, inverting the required on/off sequence. (correct.ino:32) |
+| The LED changes state within 20 ms of a valid button press, so the user notices no delay. | PASS | loop() contains no blocking delay(); the debounce window is only 4 ms and the LED is updated as soon as the debounced state changes, so the reaction is effectively immediate and well under 20 ms. (correct.ino:28) |
+| A single physical button press toggles the LED exactly once, even though the contacts bounce. | PASS | The code restarts lastChangeMs whenever the raw reading changes (line 24) and only commits the new buttonState, and performs the toggle, once the reading has been stable for DEBOUNCE\_MS (line 28), so a single bouncing press results in exactly one toggle regardless of the LED polarity issue. (correct.ino:23) |
+| On every toggle, the board prints the new LED state, either ON or OFF, on its own line over Serial1 at 9600 baud. | FAIL | Serial1.println(ledOn ? "ON" : "OFF") prints based on the logical ledOn variable, but due to the active-low wiring of the Nano 33 BLE's built-in LED, the actual physical LED state is the opposite of what ledOn indicates, so the printed message does not match the true new LED state. (correct.ino:33) |
+| The code uses the Serial1 object (pins D0/D1) configured at 9600 baud for the state messages, not the USB Serial port. | PASS | Serial1.begin(9600) is called in setup() and all state messages use Serial1.println(), matching the requirement to use Serial1 at 9600 baud instead of the USB Serial port. (correct.ino:18) |
+| The code configures pin D2 as INPUT\_PULLUP to read the button, since there is no external resistor. | PASS | pinMode(BUTTON\_PIN, INPUT\_PULLUP) is called with BUTTON\_PIN = 2, correctly configuring D2 with the internal pull-up as required since there is no external resistor. (correct.ino:15) |

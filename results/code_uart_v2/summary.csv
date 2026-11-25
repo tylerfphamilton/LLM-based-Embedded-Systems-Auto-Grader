@@ -1,0 +1,11 @@
+submission,ground_truth_faulty,fault,pass,fail,unsure,flagged,error,llm_error,llm_input_tokens,llm_output_tokens,llm_latency_s,llm_cost_usd,elapsed_s
+answers_once,true,answers_once,9,2,0,true,0,,2986,5869,61.761,0.064662,65.0
+ascii_sum,true,ascii_sum,10,1,0,true,0,,3324,2951,28.167,0.036158,28.2
+copied_id,true,copied_id,8,3,0,true,0,,3111,4210,41.181,0.048322,41.2
+correct,false,,11,0,0,false,0,,3328,2402,22.996,0.030676,23.0
+correct_alt_style,false,,11,0,0,false,0,,3591,5292,53.031,0.060102,53.0
+hex_lowercase,true,hex_lowercase,10,1,0,true,0,,3154,3969,38.900,0.045998,38.9
+lf_only,true,lf_only,9,2,0,true,0,,3007,6413,64.444,0.070144,64.4
+no_err,true,no_err,10,1,0,true,0,,3151,3647,35.301,0.042772,35.3
+usb_serial,true,usb_serial,10,1,0,true,0,,3092,4644,48.350,0.052624,48.4
+wrong_baud,true,wrong_baud,10,1,0,true,0,,3046,3444,35.293,0.040532,35.3
