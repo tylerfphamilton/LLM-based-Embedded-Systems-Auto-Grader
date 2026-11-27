@@ -41,10 +41,10 @@ exercised by every test.
 | `flasher.py` | `Flasher` ABC, `NoopFlasher`, `ArduinoCliFlasher`, `Submission` | Getting the student's code onto the board |
 | `feedback.py` | `FeedbackGenerator` protocol, `FeedbackResult`, `NullFeedback`, `LLMFeedback` | One call per submission explaining FAIL checks; plain-code checks on the items |
 | `llm.py` | `LLMClient` protocol, `LLMRequest`/`LLMResponse`, `AnthropicClient`, `FakeLLMClient`, `LLMError`, `load_prompt` | The only place that talks to an LLM |
-| `planner.py` | `first_request`, `generate_plan` (repair loop), `write_outputs`, `approve`, `approval_warnings` | Handout → draft plan; provenance meta files |
+| `planner.py` | `first_request`, `generate_plan` (repair loop), `write_outputs` | Handout → plan in `plans/`; provenance meta files, logs |
 | `prompts/` | `plan_system.md`, `feedback_system.md` | System prompts; version = first 8 hex of SHA-256 |
 | `batch.py` | `run_batch()`, `BatchMetrics` | Many scenarios + benchmark metrics |
-| `cli.py` | `grader export-schema / validate-plan / run / batch / make-plan / approve-plan` | Typer CLI |
+| `cli.py` | `grader export-schema / validate-plan / run / batch / make-plan / code-grade` | Typer CLI |
 
 ## Key rules (from the brief)
 

@@ -10,7 +10,7 @@ draft the test plan from an assignment handout and explain failed checks.
 ## How it works
 
 ```
-handout ──(LLM, once per assignment)──► test plan (JSON, reviewed and approved)
+handout ──(LLM, once per assignment)──► test plan (JSON, validated, read before use)
 
 student sketch ──► host: compile + upload (arduino-cli) ──► Nano 33 BLE Sense
 host ──► text commands over USB ──► STM32 Nucleo-L476RG ──► wired to the Nano's pins
@@ -97,15 +97,14 @@ counts, ground truth, time per submission and LLM tokens and cost.
 
 ```powershell
 grader make-plan --handout handouts/pwm_1khz.md --name pwm_1khz_llm   # --dry-run: no API call
-# review plans/drafts/pwm_1khz_llm.draft.json, then save it as plans/pwm_1khz_llm.json
-grader approve-plan plans/pwm_1khz_llm.json --by "Sean"
-grader validate-plan plans/pwm_1khz_llm.json
+grader validate-plan plans/pwm_1khz_llm.json                           # again, after any edit
 ```
 
 `make-plan` checks the LLM's plan with the same validator as a hand-written one and sends
-any errors back to the model (up to 3 attempts). Provenance (model, prompt version,
-tokens) goes in `plans/<name>.meta.yaml`. `run` and `batch` warn about plans that aren't
-approved or were changed after approval.
+any errors back to the model (up to 3 attempts). The valid plan goes straight to
+`plans/<name>.json`; read its assumptions before grading with it. It never replaces an
+existing plan unless you pass `--force`. Provenance (model, prompt version, tokens) goes in
+`plans/<name>.meta.yaml`, and the full conversation in `plans/logs/<name>.log.json`.
 
 ## Submissions
 
@@ -165,7 +164,7 @@ commands; the command table in `firmware/src/cmd.c` shows which exist so far.
 src/grader/   host software: CLI, runner, protocol, transports, flasher, LLM client, planner
 firmware/     STM32 measuring-board firmware (Zephyr)
 config/       pinmap.yaml, rig_profile.yaml, llm.yaml
-plans/        test plans, meta files, drafts/ from the LLM
+plans/        test plans, meta files, logs/ of LLM plan generation
 handouts/     assignment handouts
 benchmark/    sketch folders + labels.yaml per assignment
 scenarios/    simulated submissions for the fake rig

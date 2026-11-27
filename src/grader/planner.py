@@ -1,8 +1,9 @@
-"""Handout -> draft test plan through the LLM, with a validate-and-repair loop.
+"""Handout -> test plan through the LLM, with a validate-and-repair loop.
 
-The LLM only drafts. A draft becomes a plan when a person copies it to
-``plans/<name>.json`` and runs ``grader approve-plan``. Provenance lives in the sidecar
-``plans/<name>.meta.yaml``.
+A plan that passes ``parse_plan`` + ``validate_plan`` is written straight to
+``plans/<name>.json`` (D68); a person still reads it before grading, but there is no
+separate approval step. Provenance lives in the sidecar ``plans/<name>.meta.yaml`` and the
+full conversation in ``plans/logs/<name>.log.json``.
 """
 
 from __future__ import annotations
@@ -267,12 +268,6 @@ def meta_path(plan_path: Path) -> Path:
     return plan_path.with_name(plan_path.stem + ".meta.yaml")
 
 
-def load_meta(path: Path) -> dict | None:
-    if not path.exists():
-        return None
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
 def write_meta(path: Path, meta: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(meta, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -286,11 +281,11 @@ def write_outputs(
     out_dir: Path,
     now: datetime,
 ) -> dict[str, Path]:
-    """Always write the log; on success also the draft and the meta file."""
-    drafts = out_dir / "drafts"
-    drafts.mkdir(parents=True, exist_ok=True)
+    """Always write the log; on success also the plan and its meta file."""
+    logs = out_dir / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
     _, prompt_version = load_prompt(PLAN_PROMPT)
-    log = drafts / f"{name}.log.json"
+    log = logs / f"{name}.log.json"
     log.write_text(
         json.dumps(
             {
@@ -310,14 +305,13 @@ def write_outputs(
     paths = {"log": log}
     if not result.ok:
         return paths
-    draft = drafts / f"{name}.draft.json"
-    draft.write_text(json.dumps(result.raw_plan, indent=2, ensure_ascii=False) + "\n", "utf-8")
-    meta = meta_path(out_dir / f"{name}.json")
+    plan = out_dir / f"{name}.json"
+    plan.write_text(json.dumps(result.raw_plan, indent=2, ensure_ascii=False) + "\n", "utf-8")
+    meta = meta_path(plan)
     write_meta(
         meta,
         {
             "source": "llm",
-            "status": "draft",
             "handout": handout_path.as_posix(),
             "handout_sha256": file_sha256(handout_path),
             "model": result.responses[-1].model,
@@ -326,37 +320,7 @@ def write_outputs(
             "notes": result.notes,
             "tokens": result.tokens,
             "generated_at": now.isoformat(),
-            "draft": draft.as_posix(),
-            "approved_by": None,
-            "approved_at": None,
-            "plan_sha256": None,
+            "log": log.as_posix(),
         },
     )
-    return {**paths, "draft": draft, "meta": meta}
-
-
-def approve(plan_path: Path, by: str, now: datetime) -> dict:
-    """Mark a reviewed plan approved; creates a ``source: hand`` meta file if there is none."""
-    path = meta_path(plan_path)
-    meta = load_meta(path) or {"source": "hand"}
-    meta.update(
-        status="approved",
-        approved_by=by,
-        approved_at=now.isoformat(),
-        plan_sha256=file_sha256(plan_path),
-    )
-    write_meta(path, meta)
-    return meta
-
-
-def approval_warnings(plan_path: Path) -> list[str]:
-    """Warnings for a plan whose meta file says it is not (or no longer) approved."""
-    meta = load_meta(meta_path(plan_path))
-    if meta is None:
-        return []  # plans without provenance run normally
-    name = plan_path.as_posix()
-    if meta.get("status") != "approved":
-        return [f"{name}: status is '{meta.get('status')}', not 'approved'; review it first."]
-    if meta.get("plan_sha256") != file_sha256(plan_path):
-        return [f"{name}: the file changed after it was approved; approve it again."]
-    return []
+    return {**paths, "plan": plan, "meta": meta}

@@ -21,8 +21,9 @@ pydantic v2, typer, pytest, ruff. Read `docs/DESIGN.md` first, then `docs/decisi
    calls go through `llm.LLMClient`; every failure becomes `LLMError` and only removes
    feedback (or fails `make-plan`). Feedback runs once per submission, after all verdicts,
    only if something FAILed, and attaches text to FAIL checks only.
-7. **LLM plans are drafts.** They pass the same `parse_plan` + `validate_plan` as hand
-   plans, land in `plans/drafts/`, and become real only via a person + `approve-plan`.
+7. **LLM plans are validated like hand plans.** They pass the same `parse_plan` +
+   `validate_plan` and land directly in `plans/<name>.json` (never overwriting an existing
+   plan without `--force`); there is no approval step (D68). A person reads them before use.
 8. **No network in the default `pytest` run.** Use `FakeLLMClient` / an injected
    `sdk_factory`. Real API tests are `@pytest.mark.live` (deselected by default).
    Never hardcode a model ID in code; it lives in `config/llm.yaml`. Never send

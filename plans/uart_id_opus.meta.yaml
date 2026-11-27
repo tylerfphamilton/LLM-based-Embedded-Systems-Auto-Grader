@@ -1,5 +1,4 @@
 source: llm
-status: approved
 handout: handouts/uart_id.md
 handout_sha256: df6ed74a8acc6c86007bd359cb6df4ef85f50b815ea263fd7132f86689ccec0e
 model: claude-opus-5-5
@@ -11,7 +10,4 @@ tokens:
   input: 12524
   output: 2417
 generated_at: '2026-11-22T20:58:22.200675+00:00'
-draft: plans/drafts/uart_id_opus.draft.json
-approved_by: Sean
-approved_at: '2026-11-22T20:59:36.219325+00:00'
-plan_sha256: 19fb4540163125cdb58b9f6d3502fa5307347949c7cb33d84005c624ddc3f8ee
+log: plans/logs/uart_id_opus.log.json

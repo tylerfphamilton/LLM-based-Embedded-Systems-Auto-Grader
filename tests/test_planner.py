@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from grader import cli
 from grader.llm import FakeLLMClient, LLMConfig
+from grader.plan import load_plan
 from grader.planner import (
     PLAN_TOOL,
     file_sha256,
@@ -19,6 +20,7 @@ from grader.planner import (
     plan_tool,
     write_outputs,
 )
+from grader.validate import validate_plan
 
 NOW = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
 CFG = LLMConfig(model="test-model")
@@ -149,15 +151,16 @@ def test_meta_file_contents(root, pinmap, good_plan, tmp_path) -> None:
     paths = write_outputs(result, name="pwm_1khz", handout_path=handout, out_dir=tmp_path, now=NOW)
     meta = yaml.safe_load(paths["meta"].read_text(encoding="utf-8"))
     assert paths["meta"] == tmp_path / "pwm_1khz.meta.yaml"
-    assert meta["source"] == "llm" and meta["status"] == "draft"
+    assert meta["source"] == "llm" and "status" not in meta and "approved_by" not in meta
     assert meta["handout_sha256"] == file_sha256(handout)
     assert meta["model"] == "fake-model" and len(meta["prompt_version"]) == 8
     assert meta["attempts"] == 2 and meta["tokens"] == {"input": 200, "output": 100}
     assert meta["notes"] == []
     assert meta["generated_at"] == NOW.isoformat()
-    assert meta["draft"] == (tmp_path / "drafts" / "pwm_1khz.draft.json").as_posix()
-    assert meta["approved_by"] is None and meta["plan_sha256"] is None
-    assert json.loads(paths["draft"].read_text(encoding="utf-8")) == good_plan
+    assert meta["log"] == (tmp_path / "logs" / "pwm_1khz.log.json").as_posix()
+    assert paths["plan"] == tmp_path / "pwm_1khz.json"  # straight into plans/, no draft
+    assert json.loads(paths["plan"].read_text(encoding="utf-8")) == good_plan
+    assert not (tmp_path / "drafts").exists()
     log = json.loads(paths["log"].read_text(encoding="utf-8"))
     assert len(log["responses"]) == 2 and len(log["conversation"]) == 4
 
@@ -186,23 +189,41 @@ def test_cli_three_invalid_attempts_exit_nonzero(root, tmp_path, monkeypatch, ba
     assert res.exit_code == 1, res.output
     assert "pin D7 is not in the pin map" in res.output
     assert len(fake.requests) == 3
-    assert not (out / "drafts" / "pwm_1khz.draft.json").exists()
     assert not (out / "pwm_1khz.meta.yaml").exists() and not (out / "pwm_1khz.json").exists()
-    assert (out / "drafts" / "pwm_1khz.log.json").exists()
+    assert (out / "logs" / "pwm_1khz.log.json").exists()
 
 
-def test_cli_success_writes_draft(root, tmp_path, monkeypatch, good_plan) -> None:
-    _patch_client(monkeypatch, FakeLLMClient([FakeLLMClient.tool_call(PLAN_TOOL, good_plan)]))
-    out = tmp_path / "plans"
-    res = CliRunner().invoke(
+def _make_plan(root, tmp_path, out, *extra):
+    return CliRunner().invoke(
         cli.app,
         ["make-plan", "--handout", str(root / "handouts/pwm_1khz.md"), "--name", "pwm_1khz",
          "--pinmap", str(root / "config/pinmap.yaml"), "--llm-config", _llm_config(tmp_path),
-         "--out-dir", str(out)],
+         "--out-dir", str(out), *extra],
     )  # fmt: skip
+
+
+def test_cli_success_writes_the_plan(root, tmp_path, monkeypatch, good_plan, pinmap) -> None:
+    _patch_client(monkeypatch, FakeLLMClient([FakeLLMClient.tool_call(PLAN_TOOL, good_plan)]))
+    out = tmp_path / "plans"
+    res = _make_plan(root, tmp_path, out)
     assert res.exit_code == 0, res.output
-    assert (out / "drafts" / "pwm_1khz.draft.json").exists()
-    assert not (out / "pwm_1khz.json").exists()  # a person copies the draft, not the tool
+    assert validate_plan(load_plan(out / "pwm_1khz.json"), pinmap) == []
+    assert (out / "pwm_1khz.meta.yaml").exists() and not (out / "drafts").exists()
+    assert "approve" not in res.output
+
+
+def test_cli_never_overwrites_a_plan_without_force(root, tmp_path, monkeypatch, good_plan) -> None:
+    out = tmp_path / "plans"
+    out.mkdir()
+    hand = out / "pwm_1khz.json"
+    hand.write_text("{}\n", encoding="utf-8")  # e.g. a hand-written plan
+    fake = FakeLLMClient([FakeLLMClient.tool_call(PLAN_TOOL, good_plan)])
+    _patch_client(monkeypatch, fake)
+    res = _make_plan(root, tmp_path, out)
+    assert res.exit_code == 2 and "already exists; use --force" in res.output
+    assert fake.requests == [] and hand.read_text(encoding="utf-8") == "{}\n"  # no API call
+    assert _make_plan(root, tmp_path, out, "--force").exit_code == 0
+    assert json.loads(hand.read_text(encoding="utf-8")) == good_plan
 
 
 def test_dry_run_needs_no_key(root, monkeypatch) -> None:
@@ -228,89 +249,6 @@ def test_cli_missing_key_is_a_clear_error(root, tmp_path, monkeypatch) -> None:
          "--out-dir", str(tmp_path)],
     )  # fmt: skip
     assert res.exit_code == 2 and "ANTHROPIC_API_KEY is not set" in res.output
-
-
-# ------------------------------------------------------------------- approve-plan + runner
-
-
-def _approve(root, plan_path, by="Sean"):
-    return CliRunner().invoke(
-        cli.app,
-        ["approve-plan", str(plan_path), "--by", by, "--pinmap", str(root / "config/pinmap.yaml")],
-    )
-
-
-def _run(root, plan_path, out):
-    return CliRunner().invoke(
-        cli.app,
-        ["run", "--plan", str(plan_path), "--scenario", str(root / "scenarios/pwm/correct.yaml"),
-         "--pinmap", str(root / "config/pinmap.yaml"),
-         "--profile", str(root / "config/rig_profile.yaml"), "--out", str(out)],
-    )  # fmt: skip
-
-
-@pytest.fixture
-def plan_copy(root, tmp_path):
-    path = tmp_path / "plans" / "pwm_1khz.json"
-    path.parent.mkdir()
-    path.write_bytes((root / "plans" / "pwm_1khz.json").read_bytes())
-    return path
-
-
-def test_approve_creates_hand_meta_with_hash(root, plan_copy) -> None:
-    res = _approve(root, plan_copy)
-    assert res.exit_code == 0, res.output
-    meta = yaml.safe_load((plan_copy.parent / "pwm_1khz.meta.yaml").read_text(encoding="utf-8"))
-    assert meta["source"] == "hand" and meta["status"] == "approved"
-    assert meta["approved_by"] == "Sean" and meta["approved_at"]
-    assert meta["plan_sha256"] == file_sha256(plan_copy)
-
-
-def test_approve_keeps_llm_provenance(root, plan_copy, pinmap, good_plan) -> None:
-    fake = FakeLLMClient([FakeLLMClient.tool_call(PLAN_TOOL, good_plan)])
-    result = generate_plan(fake, _request(root), name="pwm_1khz", pinmap=pinmap)
-    write_outputs(
-        result,
-        name="pwm_1khz",
-        handout_path=root / "handouts" / "pwm_1khz.md",
-        out_dir=plan_copy.parent,
-        now=NOW,
-    )
-    assert _approve(root, plan_copy).exit_code == 0
-    meta = yaml.safe_load((plan_copy.parent / "pwm_1khz.meta.yaml").read_text(encoding="utf-8"))
-    assert meta["source"] == "llm" and meta["status"] == "approved" and meta["attempts"] == 1
-
-
-def test_approve_rejects_invalid_plan(root, tmp_path, bad_plan) -> None:
-    path = tmp_path / "pwm_1khz.json"
-    path.write_text(json.dumps(bad_plan), encoding="utf-8")
-    res = _approve(root, path)
-    assert res.exit_code == 1 and "pin D7" in res.output
-    assert not (tmp_path / "pwm_1khz.meta.yaml").exists()
-
-
-def test_runner_warns_on_draft_and_on_edit_after_approval(root, plan_copy, tmp_path) -> None:
-    def warnings(out):
-        report = json.loads((out / "pwm_correct" / "report.json").read_text(encoding="utf-8"))
-        return report["plan_warnings"]
-
-    res = _run(root, plan_copy, tmp_path / "o1")  # no meta file: runs normally, no warning
-    assert res.exit_code == 0 and warnings(tmp_path / "o1") == []
-
-    meta = plan_copy.parent / "pwm_1khz.meta.yaml"
-    meta.write_text("source: llm\nstatus: draft\n", encoding="utf-8")
-    res = _run(root, plan_copy, tmp_path / "o2")
-    assert res.exit_code == 0 and "not 'approved'" in warnings(tmp_path / "o2")[0]
-
-    assert _approve(root, plan_copy).exit_code == 0
-    assert _run(root, plan_copy, tmp_path / "o3").exit_code == 0
-    assert warnings(tmp_path / "o3") == []
-
-    plan_copy.write_text(plan_copy.read_text(encoding="utf-8").replace("25%", "30%"), "utf-8")
-    res = _run(root, plan_copy, tmp_path / "o4")
-    assert res.exit_code == 0  # a warning never blocks the run
-    assert "changed after it was approved" in warnings(tmp_path / "o4")[0]
-    assert "WARNING" in res.output
 
 
 def test_hash_ignores_line_endings(tmp_path) -> None:

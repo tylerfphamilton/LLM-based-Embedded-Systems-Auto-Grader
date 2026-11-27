@@ -1,5 +1,4 @@
 source: llm
-status: approved
 handout: handouts/button_toggle.md
 handout_sha256: be7081cbb19db385637c528726ecd587bc82f435820dcf243bad0d023c76e453
 model: claude-sonnet-5
@@ -11,7 +10,4 @@ tokens:
   input: 12011
   output: 6643
 generated_at: '2026-11-19T00:48:15.054364+00:00'
-draft: plans/drafts/button_toggle_sonnet_a.draft.json
-approved_by: Sean
-approved_at: '2026-11-20T19:28:09.163030+00:00'
-plan_sha256: bbfff5e151e1917372f08a5dc7575c638352a33b90d7631a5f4e9cfb6a01d9c7
+log: plans/logs/button_toggle_sonnet_a.log.json

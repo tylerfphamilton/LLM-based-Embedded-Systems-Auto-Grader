@@ -1,5 +1,5 @@
 """Command-line interface: ``grader export-schema | validate-plan | run | batch |
-make-plan | approve-plan | code-grade``."""
+make-plan | code-grade``."""
 
 from __future__ import annotations
 
@@ -28,13 +28,9 @@ from grader.pinmap import load_pinmap
 from grader.plan import PARAM_PATTERN, PlanError, export_schema, load_plan
 from grader.planner import (
     PLAN_PROMPT,
-    approval_warnings,
-    approve,
     describe_request,
     first_request,
     generate_plan,
-    load_meta,
-    meta_path,
     write_outputs,
 )
 from grader.report import Report, write_reports
@@ -101,14 +97,6 @@ def _load_plan_or_exit(path: Path, pinmap_path: Path):
         _print_errors(path, errors)
         raise typer.Exit(1)
     return plan
-
-
-def _plan_warnings(path: Path) -> list[str]:
-    """Provenance warnings (unapproved or edited plan). They never block the run."""
-    warnings = approval_warnings(path)
-    for w in warnings:
-        typer.secho(f"WARNING: {w}", fg=typer.colors.YELLOW, err=True)
-    return warnings
 
 
 def _pairs_or_exit(items: list[str] | None, option: str) -> dict[str, str]:
@@ -201,7 +189,7 @@ def run(
     values = _pairs_or_exit(param, "--param")
     p = _load_plan_or_exit(plan, pinmap)
     fb = _feedback_or_exit(feedback, llm_config)
-    warnings = _plan_warnings(plan)
+    warnings: list[str] = []  # plan warnings in the report (none since D68)
     pm, prof = load_pinmap(pinmap), load_rig_profile(profile)
     if rig is Rig.fake:
         if scenario is None:
@@ -302,7 +290,7 @@ def batch(
         return
     fb = _feedback_or_exit(feedback, llm_config)
     cost = load_llm_config(llm_config).cost_usd if fb is not None else None
-    warnings = _plan_warnings(plan)
+    warnings: list[str] = []  # plan warnings in the report (none since D68)
     paths = sorted(folder.glob("*.yaml")) + sorted(folder.glob("*.yml"))
     if not paths:
         typer.echo(f"error: no scenario files in {folder}", err=True)
@@ -389,7 +377,7 @@ def _serial_batch(
         raise typer.Exit(2) from None
     fb = _feedback_or_exit(feedback, llm_config)
     cost = load_llm_config(llm_config).cost_usd if fb is not None else None
-    warnings = _plan_warnings(plan_path)
+    warnings: list[str] = []  # plan warnings in the report (none since D68)
     try:
         transport = SerialTransport(port)
     except (TransportError, ImportError) as exc:
@@ -431,7 +419,7 @@ def make_plan_cmd(
     llm_config: LLMConfigOpt = DEFAULT_LLM_CONFIG,
     out_dir: Annotated[Path, typer.Option(help="Plans directory.")] = Path("plans"),
     dry_run: Annotated[bool, typer.Option(help="Print the first request; no API call.")] = False,
-    force: Annotated[bool, typer.Option(help="Overwrite an approved meta file.")] = False,
+    force: Annotated[bool, typer.Option(help="Replace an existing plans/<name>.json.")] = False,
     param_doc: Annotated[
         list[str] | None,
         typer.Option(
@@ -439,7 +427,7 @@ def make_plan_cmd(
         ),
     ] = None,
 ) -> None:
-    """Draft a test plan from a handout with the LLM (writes plans/drafts/<name>.draft.json)."""
+    """Generate a test plan from a handout with the LLM (writes plans/<name>.json)."""
     docs = _pairs_or_exit(param_doc, "--param-doc")
     cfg = load_llm_config(llm_config)
     req = first_request(
@@ -448,13 +436,9 @@ def make_plan_cmd(
     if dry_run:
         typer.echo(describe_request(req, load_prompt(PLAN_PROMPT)[1]))
         return
-    meta = load_meta(meta_path(out_dir / f"{name}.json"))
-    if meta and meta.get("status") == "approved" and not force:
-        typer.echo(
-            f"error: {meta_path(out_dir / f'{name}.json')} is approved; "
-            "use --force to replace it with a new draft",
-            err=True,
-        )
+    target = out_dir / f"{name}.json"
+    if target.exists() and not force:  # checked before any API call
+        typer.echo(f"error: {target} already exists; use --force to replace it", err=True)
         raise typer.Exit(2)
     try:
         cfg.check()
@@ -476,24 +460,9 @@ def make_plan_cmd(
         _print_errors(Path(f"{name} (after {result.attempts} attempts)"), result.errors)
         typer.echo(f"log: {paths['log']}", err=True)
         raise typer.Exit(1)
-    typer.echo(f"draft: {paths['draft']}  ({result.attempts} attempt(s))")
-    typer.echo(f"meta:  {paths['meta']}   log: {paths['log']}")
-    typer.echo(
-        f"Review the draft, copy it to {out_dir / (name + '.json')}, then run: "
-        f"grader approve-plan {out_dir / (name + '.json')} --by <you>"
-    )
-
-
-@app.command("approve-plan")
-def approve_plan_cmd(
-    plan: Annotated[Path, typer.Argument(help="Reviewed plan JSON file.")],
-    by: Annotated[str, typer.Option(help="Who reviewed and approved the plan.")],
-    pinmap: PinmapOpt = DEFAULT_PINMAP,
-) -> None:
-    """Validate a reviewed plan and mark it approved in plans/<name>.meta.yaml."""
-    _load_plan_or_exit(plan, pinmap)
-    meta = approve(plan, by, datetime.now(UTC))
-    typer.echo(f"{meta_path(plan)}: approved by {by} (sha256 {meta['plan_sha256'][:12]})")
+    typer.echo(f"plan: {paths['plan']}  ({result.attempts} attempt(s))")
+    typer.echo(f"meta: {paths['meta']}   log: {paths['log']}")
+    typer.echo("Read the plan's assumptions before grading with it.")
 
 
 @app.command("code-grade")

@@ -687,3 +687,22 @@ hardware grading.
   (Serial1 at 9600 baud; D2 `INPUT_PULLUP`) are kept as ordinary requirements, and the ones
   about how the code is written (comments; debounce without `delay()`) are removed. The
   original lists stay as the record of the model's unaided reading.
+
+**D68. No approval step: `make-plan` writes the plan straight to `plans/<name>.json`.**
+Approving (copy the draft from `plans/drafts/`, run `approve-plan`, and get warnings from
+`run`/`batch` about unapproved or edited plans) was tedious and added little: every LLM
+plan already passes the same `parse_plan` + `validate_plan` as a hand-written one, and the
+plan is a readable file that a person checks before grading anyway. Replaces the approval
+part of the LLM-layer decisions.
+* `make-plan` writes the validated plan to `plans/<name>.json`, provenance to
+  `plans/<name>.meta.yaml` (model, prompt version, attempts, tokens, handout hash, and the
+  log path; no `status` or approval fields any more) and the conversation to
+  `plans/logs/<name>.log.json`. A failed run writes only the log.
+* It refuses to replace an existing `plans/<name>.json` unless `--force` is given, and checks
+  this before any API call, so it can't overwrite a hand-written plan by accident.
+* `approve-plan`, `approve` and `approval_warnings` are gone; the report's `plan_warnings`
+  field stays (always empty now) so `report.json` keeps its shape.
+* Existing files: the generation logs moved from `plans/drafts/` to `plans/logs/`; drafts
+  that never became a plan (`button_toggle_llm`, `_v2`, `_v3`, `pwm_1khz_llm`) moved there
+  too, with their meta files; drafts whose plan is already in `plans/` were deleted (git
+  history keeps them); the approval fields were removed from the remaining meta files.
