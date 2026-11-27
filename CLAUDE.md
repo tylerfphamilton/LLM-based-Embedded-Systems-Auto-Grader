@@ -37,6 +37,11 @@ pydantic v2, typer, pytest, ruff. Read `docs/DESIGN.md` first, then `docs/decisi
     submission missing a declared value stops the batch before grading (exit 2): an
     instructor error, not FAIL or ERROR. Params listed in `redact_params` are replaced by
     `<name>` before any LLM call, and put back only in the accepted feedback text.
+12. **Wiring guides come from the plan and the pin map in plain code, never from the LLM
+    (D69).** Physical wiring facts (`header`, `series_ohms`, `note`) live in
+    `config/pinmap.yaml`, outside the pin-map hash. After changing the pin map or a hand
+    plan, regenerate its guide with `grader wiring --plan plans/<name>.json`
+    (`test_committed_guides_are_fresh_and_deterministic` catches stale ones).
 
 ## Commands
 

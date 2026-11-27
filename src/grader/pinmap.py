@@ -36,6 +36,10 @@ class PinInfo(BaseModel):
 
     stm32: str
     caps: list[Capability]
+    # Physical wiring facts for the wiring guides (D69). Not part of the pin-map hash.
+    header: str | None = None  # label on the Nucleo board, e.g. "D7"
+    series_ohms: int | None = None  # resistor in series on the wire; None = direct wire
+    note: str | None = None  # what the wire is for
 
 
 class PinMap(BaseModel):

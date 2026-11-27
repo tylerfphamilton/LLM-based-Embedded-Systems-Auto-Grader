@@ -146,6 +146,19 @@ grader code-grade --handout handouts/button_toggle.md --submissions benchmark/bu
 python scripts/compare_runs.py --hw out/btn17_final_button_toggle_opus_c --code out/code_btn
 ```
 
+## Wiring
+
+Each plan has a wiring guide in `plans/wiring_guides/<name>.wiring.md`: which Nano pin goes to
+which Nucleo pin, through which resistor, plus a checklist. It is generated in plain code
+from the plan and `config/pinmap.yaml` (the `header`, `series_ohms` and `note` fields),
+never by the LLM. `make-plan` writes the guide too; a plan that uses a pin not wired yet
+(`stm32: TBD`) is kept, but the command exits 2.
+
+```powershell
+grader wiring --plan plans/button_toggle.json            # writes plans/wiring_guides/button_toggle.wiring.md
+grader wiring --plan plans/button_toggle.json --print    # or to stdout
+```
+
 ## Adding an assignment
 
 No Python changes:

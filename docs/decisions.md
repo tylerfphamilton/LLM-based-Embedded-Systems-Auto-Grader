@@ -706,3 +706,49 @@ part of the LLM-layer decisions.
   that never became a plan (`button_toggle_llm`, `_v2`, `_v3`, `pwm_1khz_llm`) moved there
   too, with their meta files; drafts whose plan is already in `plans/` were deleted (git
   history keeps them); the approval fields were removed from the remaining meta files.
+
+## Wiring guides
+
+**D69. A wiring guide per plan, from the plan and the pin map (`grader wiring`).** There
+is no fixed harness: the Nano is wired to the Nucleo by hand for each assignment, so each
+plan gets `plans/wiring_guides/<name>.wiring.md`, listing the wires and resistors.
+* **Plain code, never the LLM.** Every connection follows from the plan's pins and
+  `config/pinmap.yaml`, so code produces it exactly. An LLM could invent a pin or a
+  resistor, and a wrong resistor can damage a board. `make-plan` writes the guide after the
+  plan (D68), from the validated plan.
+* **Wiring facts live in the pin map.** `PinInfo` gains three optional fields, taken from
+  the old comments: `header` (the Nucleo label), `series_ohms` (missing = direct wire; 1000
+  on D2 and D0) and `note`. `pinmap_canonical` still uses only name, `stm32` and caps, so
+  the hash stays `46b391a6` and the firmware needs no reflash (a test checks it against
+  `firmware/src/pins_gen.h`). Comments the fields don't cover stay comments. A0, A4 and
+  A5 have no header yet, because their comments give none.
+* **A `TBD` pin is an error.** A plan that uses a pin with `stm32: TBD` may still validate,
+  but it can't be wired: `WiringError` names the pin and the steps that use it.
+  `grader wiring` exits 2. `make-plan` keeps the plan, prints the error and exits 2.
+* **Rows.** GND first, then one row per Nano pin (D0.. by number, A0.., then RST), with
+  every use of that pin. RST appears when `setup.reset` is true. Direction comes from the
+  caps: "rig drives" for `drive`, `uart_tx`, `dac` and `reset`, otherwise "rig measures".
+* **Choices the brief left open:**
+  * **Serial1 is wired as a pair.** A plan with any `uart_read` or `uart_send` gets both
+    lines (D0 and D1), with the unused one marked "not used by this plan; wired with the
+    pair". The brief's step table gives `uart_read` only the receive line, but its own
+    test expects D0 with `1 kΩ in series` for `button_toggle` (which only reads), and the
+    checklist's TX→RX line names both pins. Wiring the pair also lets one harness serve
+    every UART plan.
+  * **"Used for" labels are generic,** derived from the step type ("PWM output
+    (measured)", "digital level (traced)", "delay start (edge watched)", "Serial1 TX →
+    rig"). A pin is a "button input" when the plan `release`s or `bounce`s it, and that
+    also adds the checklist's `INPUT_PULLUP` line; other driven pins are "digital input
+    (driven by the rig)". Code can't tell that D13 is an LED, so the pin map's `note`
+    only fills in when no step gives a use.
+  * The plan-dependent checklist lines (button, TX→RX) come before "plug in" and
+    `rig_check.py`, so all wiring steps come before powering up.
+  * The guide names the plan by file name only and the pin map
+    by its path relative to the working directory, so the text doesn't depend on where the
+    command ran. It holds no dates; the committed guides for `blink_2hz`, `pwm_1khz`,
+    `button_toggle` and `uart_id` must equal a fresh render (a test, like
+    `gen_pins_h.py --check`). The file is written in text mode (CRLF on Windows, as the
+    checkout has it); the test compares with line endings normalised. LLM plans get a
+    guide when regenerated or through `grader wiring`.
+* **Size:** about 255 new source lines (`wiring.py` ≈220, the CLI +32), over the ~150
+  aimed for. Most of it is the checklist text and one label per primitive.

@@ -1,5 +1,5 @@
 """Command-line interface: ``grader export-schema | validate-plan | run | batch |
-make-plan | code-grade``."""
+make-plan | wiring | code-grade``."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ from grader.planner import (
 from grader.report import Report, write_reports
 from grader.rig_profile import load_rig_profile
 from grader.validate import validate_plan
+from grader.wiring import WiringError, guide_text, write_wiring
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -462,7 +463,38 @@ def make_plan_cmd(
         raise typer.Exit(1)
     typer.echo(f"plan: {paths['plan']}  ({result.attempts} attempt(s))")
     typer.echo(f"meta: {paths['meta']}   log: {paths['log']}")
+    try:
+        guide = write_wiring(load_plan(paths["plan"]), load_pinmap(pinmap), paths["plan"], pinmap)
+    except WiringError as exc:
+        typer.echo(f"error: no wiring guide, the plan can't be wired yet: {exc}", err=True)
+        typer.echo(f"The plan was kept: {paths['plan']}", err=True)
+        raise typer.Exit(2) from None
+    typer.echo(f"wiring: {guide}")
     typer.echo("Read the plan's assumptions before grading with it.")
+
+
+@app.command()
+def wiring(
+    plan: Annotated[Path, typer.Option(help="Plan JSON file.")],
+    pinmap: PinmapOpt = DEFAULT_PINMAP,
+    out: Annotated[
+        Path | None,
+        typer.Option(help="Where to write (default: plans/wiring_guides/<name>.wiring.md)."),
+    ] = None,
+    print_: Annotated[bool, typer.Option("--print", help="Write to stdout instead.")] = False,
+) -> None:
+    """Write the plan's wiring guide (which wires, which resistors) from the pin map."""
+    p = _load_plan_or_exit(plan, pinmap)
+    pm = load_pinmap(pinmap)
+    try:
+        if print_:
+            typer.echo(guide_text(p, pm, plan, pinmap), nl=False)
+            return
+        target = write_wiring(p, pm, plan, pinmap, out)
+    except WiringError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from None
+    typer.echo(f"wrote {target}")
 
 
 @app.command("code-grade")
