@@ -73,6 +73,14 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   list); anything else is `ERR BADARG`. The STM32's USART1 runs from the crystal-locked
   80 MHz clock, except 300 and 1200 baud, which need the 16 MHz internal oscillator
   (about ±1%, well inside a UART's tolerance).
+* `DAC <pin> <mv>` (0–3300): only pins with the `dac` capability (A0 → PA4 = DAC1_OUT1,
+  through a 1 kΩ series resistor). Outputs the voltage and holds it until the next `DAC`
+  (also across `RESET`, like `DRIVE`); replies `OK` once it has settled (~20 µs). It is a
+  stimulus, so it runs while measurements are armed. The output is buffered (it drives
+  the student's input with no load error) and the value is `mv × 4095 / 3300`, assuming
+  VDDA is exactly 3.3 V. The buffer only reaches about 0.2 V from either rail, so 0–200
+  and 3100–3300 mV come out closer to the middle than asked: plans should use
+  200–3100 mV.
 
 ### Measurement semantics
 

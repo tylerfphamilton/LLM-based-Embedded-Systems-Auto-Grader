@@ -21,4 +21,5 @@ target_sources(app PRIVATE
     src/drive.c
     src/delay.c
     src/student_uart.c
+    src/dac_out.c
 )

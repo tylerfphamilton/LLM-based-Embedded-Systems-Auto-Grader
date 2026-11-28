@@ -3,7 +3,7 @@
 A bouncy active-low button on D2 toggles the LED on D13 within 20 ms and prints ON/OFF on Serial1 at 9600 baud; bounce must be ignored.
 
 Plan: `button_toggle.json`  
-Pin map: `config/pinmap.yaml` (hash `46b391a6`)
+Pin map: `config/pinmap.yaml` (hash `61d72c32`)
 
 | # | Nano 33 BLE pin | Nucleo pin (header) | STM32 | Resistor | Direction | Used for |
 |---|---|---|---|---|---|---|
@@ -24,7 +24,7 @@ Pin map: `config/pinmap.yaml` (hash `46b391a6`)
 6. The rig releases the pin when the button is not pressed; the student's `INPUT_PULLUP` holds it high. Don't add a pull-up resistor.
 7. TX goes to RX: Nano D1 (Serial1 TX) → the rig's receive pin (Nucleo D2, PA10), and the rig's transmit pin (Nucleo D8, PA9) → Nano D0 (Serial1 RX).
 8. Plug both boards into the laptop: the Nano by its own USB, the Nucleo by its ST-LINK USB.
-9. Run `python scripts/rig_check.py`. It should report a matching pin map (`pinmap=46b391a6`). This checks the firmware, **not** the wires.
+9. Run `python scripts/rig_check.py`. It should report a matching pin map (`pinmap=61d72c32`). This checks the firmware, **not** the wires.
 
 ---
 

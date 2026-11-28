@@ -20,6 +20,7 @@ import pytest
 from grader.pinmap import Capability, pinmap_hash
 from grader.protocol import (
     PROTOCOL_VERSION,
+    Dac,
     Err,
     Ok,
     UartRead,
@@ -34,7 +35,7 @@ FW = ROOT / "firmware" / "src"
 LINE_MAX = 1024
 
 # harness rows "<kind>\t<pin>\t<reply>": one command run on every pin of the table
-PER_PIN_CASES = ("freqpin", "tracepin", "drivepin", "delayfrom", "delayto")
+PER_PIN_CASES = ("freqpin", "tracepin", "drivepin", "delayfrom", "delayto", "dacpin")
 
 COMPILER = next((c for c in ("cc", "gcc", "clang") if shutil.which(c)), None)
 pytestmark = pytest.mark.skipif(
@@ -771,3 +772,67 @@ def test_arm_errors_take_no_slot(arm_cases) -> None:
         assert arm_cases[case] == format_response(noslot), case
     assert arm_cases["collect_none"] == "ERR BADCMD COLLECT takes 1 arguments, got 0"
     assert arm_cases["arm_cleanup"] == arm_cases["freq_1k"]
+
+
+# --------------------------------------------------------------------------- DAC
+
+
+def test_dac_checks_every_pin_against_the_pin_map(output, pinmap) -> None:
+    """DAC runs only on wired pins with the dac capability."""
+    for name, info in pinmap.pins.items():
+        line = output[0][f"dacpin:{name}"]
+        if "dac" not in info.caps:
+            want = format_response(Err("BADPIN", f"pin {name} has no dac capability"))
+        elif not _wired(info.stm32):
+            want = format_response(Err("BADPIN", f"pin {name} is not wired (TBD in the pin map)"))
+        else:
+            want = ok()
+        assert line == want, name
+    unknown = Err("BADPIN", "pin D99 is not in the pin map")
+    assert output[0]["dac_unknown"] == format_response(unknown)
+
+
+@pytest.fixture
+def dac_cases(output, pinmap) -> dict[str, str]:
+    cases = output[0]
+    if "dac_pin" not in cases:
+        pytest.skip("no wired dac pin in config/pinmap.yaml")
+    m = _wired(pinmap.pins[cases["dac_pin"]].stm32)
+    assert m
+    cases = dict(cases)
+    cases["_stm32"] = f"{m.group(1)} {int(m.group(2))}"
+    return cases
+
+
+def test_dac_sets_the_mapped_stm32_pin(dac_cases) -> None:
+    pin = dac_cases["dac_pin"]
+    assert Dac(pin, 1650).to_line() == f"DAC {pin} 1650"  # what the host sends
+    for case, mv in (("dac_mid", 1650), ("dac_zero", 0), ("dac_max", 3300)):
+        assert dac_cases[case] == ok(), case
+        assert dac_cases[f"{case}_call"] == f"{dac_cases['_stm32']} {mv}", case
+
+
+def test_dac_rejects_bad_arguments_without_output(dac_cases) -> None:
+    bad = format_response(Err("BADARG", "mv must be 0-3300"))
+    for case in ("dac_big", "dac_neg", "dac_frac", "dac_volts"):
+        assert dac_cases[case] == bad, case
+        assert dac_cases[f"{case}_call"] == "-", case
+    assert dac_cases["dac_args"] == "ERR BADCMD DAC takes 2 arguments, got 1"
+    only = "only measurements can be armed (FREQ, TRACE, DELAY, UART READ), not DAC"
+    assert dac_cases["dac_arm"] == format_response(Err("BADCMD", only))
+
+
+def test_dac_hardware_errors(dac_cases) -> None:
+    pin = dac_cases["dac_pin"]
+    port, num = dac_cases["_stm32"].split()
+    nochan = Err("BADPIN", f"no DAC output on P{port}{num} (pin {pin})")
+    assert dac_cases["dac_nochannel"] == format_response(nochan)
+    assert dac_cases["dac_hw"] == format_response(Err("INTERNAL", "DAC setup failed"))
+
+
+def test_dac_runs_while_a_measurement_is_armed(arm_cases) -> None:
+    if "arm_dac" not in arm_cases:
+        pytest.skip("no wired dac pin in config/pinmap.yaml")
+    assert arm_cases["arm_freq_dac"] == ok(slot=0)
+    assert arm_cases["arm_dac"] == ok()
+    assert arm_cases["collect_freq_dac"] == arm_cases["freq_1k"]

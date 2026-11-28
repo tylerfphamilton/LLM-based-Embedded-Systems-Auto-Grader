@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 
 from grader import cli
 from grader.llm import FakeLLMClient
-from grader.pinmap import PinMap, load_pinmap, pinmap_hash
+from grader.pinmap import PinInfo, PinMap, load_pinmap, pinmap_hash
 from grader.plan import load_plan, parse_plan
 from grader.planner import PLAN_TOOL
 from grader.wiring import WiringError, plan_connections, render_wiring, wiring_path
@@ -130,8 +130,8 @@ def test_plan_dependent_checklist_lines(pinmap) -> None:
 
 
 def test_tbd_pin_is_an_error(pinmap) -> None:
-    plan = _plan(_measure("level", "analog_read", pin="A0", samples=4))
-    with pytest.raises(WiringError, match=r"pin A0 is not wired yet .* step 'level' uses it"):
+    plan = _plan(_measure("bus", "i2c_log", window_ms=100))
+    with pytest.raises(WiringError, match=r"pin A4 is not wired yet .* step 'bus' uses it"):
         plan_connections(plan, pinmap)
 
 
@@ -143,13 +143,16 @@ def test_committed_guides_are_fresh_and_deterministic(name, pinmap) -> None:
     assert committed.replace("\r\n", "\n") == text, f"regenerate: grader wiring --plan {name}"
 
 
-def test_pinmap_hash_unchanged_and_new_fields(pinmap) -> None:
-    assert pinmap_hash(pinmap) == "46b391a6"  # the value before the wiring fields (D69)
+def test_pinmap_hash_ignores_the_wiring_fields(pinmap) -> None:
+    # the wiring fields (D69) are for people: stripping them leaves the hash unchanged, and
+    # it is the hash the firmware was generated with
+    bare = PinMap(pins={k: PinInfo(stm32=v.stm32, caps=v.caps) for k, v in pinmap.pins.items()})
+    assert pinmap_hash(bare) == pinmap_hash(pinmap)
     header = (ROOT / "firmware/src/pins_gen.h").read_text(encoding="utf-8")
-    assert '#define PINMAP_HASH "46b391a6"' in header
+    assert f'#define PINMAP_HASH "{pinmap_hash(pinmap)}"' in header
     d2 = pinmap.pins["D2"]
     assert (d2.header, d2.series_ohms) == ("D7", 1000) and d2.note
-    assert pinmap.pins["D13"].series_ohms is None and pinmap.pins["A0"].header is None
+    assert pinmap.pins["D13"].series_ohms is None and pinmap.pins["A4"].header is None
     with pytest.raises(ValidationError):
         PinMap.model_validate({"pins": {"D2": {"stm32": "PA8", "caps": [], "colour": "red"}}})
 
@@ -161,11 +164,11 @@ def test_cli_wiring_print_and_bad_plan(tmp_path, monkeypatch) -> None:
     assert "| # | Nano 33 BLE pin | Nucleo pin (header) |" in res.output
     raw = json.loads((ROOT / "plans/pwm_1khz.json").read_text(encoding="utf-8"))
     raw["assignment"] = "tbd"
-    raw["steps"] = [_measure("level", "analog_read", pin="A0", samples=4)]
+    raw["steps"] = [_measure("bus", "i2c_log", window_ms=100)]
     path = tmp_path / "tbd.json"
     path.write_text(json.dumps(raw), encoding="utf-8")
     res = runner.invoke(cli.app, ["wiring", "--plan", str(path), "--out", str(tmp_path / "w")])
-    assert res.exit_code == 2 and "pin A0 is not wired yet" in res.output
+    assert res.exit_code == 2 and "pin A4 is not wired yet" in res.output
     assert not (tmp_path / "w").exists()
 
 
@@ -193,10 +196,10 @@ def test_make_plan_writes_the_wiring_guide(monkeypatch, tmp_path) -> None:
 
 def test_make_plan_with_a_tbd_pin_keeps_the_plan_and_exits_2(monkeypatch, tmp_path) -> None:
     plan = json.loads((ROOT / "plans/pwm_1khz.json").read_text(encoding="utf-8"))
-    plan["steps"] = [_measure("level", "analog_read", pin="A0", samples=4)]
+    plan["steps"] = [_measure("bus", "i2c_log", window_ms=100)]
     res = _make_plan(monkeypatch, tmp_path, plan)
     assert res.exit_code == 2, res.output
-    assert "can't be wired yet" in res.output and "pin A0 is not wired yet" in res.output
+    assert "can't be wired yet" in res.output and "pin A4 is not wired yet" in res.output
     assert (tmp_path / "plans" / "pwm_1khz.json").exists()
     assert not (tmp_path / "plans" / "wiring_guides" / "pwm_1khz.wiring.md").exists()
 

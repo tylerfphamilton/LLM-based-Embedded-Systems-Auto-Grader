@@ -3,7 +3,7 @@
 The sketch answers ID?, SUM? and HEX? on Serial1 at 9600 baud with values derived from the student's own ID, and ERR for anything else.
 
 Plan: `uart_id.json`  
-Pin map: `config/pinmap.yaml` (hash `46b391a6`)
+Pin map: `config/pinmap.yaml` (hash `61d72c32`)
 
 | # | Nano 33 BLE pin | Nucleo pin (header) | STM32 | Resistor | Direction | Used for |
 |---|---|---|---|---|---|---|
@@ -21,7 +21,7 @@ Pin map: `config/pinmap.yaml` (hash `46b391a6`)
 5. Leave every other Nano pin unconnected. Don't also connect a real button, LED or sensor to a listed pin.
 6. TX goes to RX: Nano D1 (Serial1 TX) → the rig's receive pin (Nucleo D2, PA10), and the rig's transmit pin (Nucleo D8, PA9) → Nano D0 (Serial1 RX).
 7. Plug both boards into the laptop: the Nano by its own USB, the Nucleo by its ST-LINK USB.
-8. Run `python scripts/rig_check.py`. It should report a matching pin map (`pinmap=46b391a6`). This checks the firmware, **not** the wires.
+8. Run `python scripts/rig_check.py`. It should report a matching pin map (`pinmap=61d72c32`). This checks the firmware, **not** the wires.
 
 ---
 
