@@ -35,6 +35,10 @@ bool pins_can_drive(const struct pin_def* p){
     return p != NULL && (p->caps & CAP_DRIVE) != 0;
 }
 
+bool pins_can_analog_in(const struct pin_def* p){
+    return p != NULL && (p->caps & CAP_ANALOG_IN) != 0;
+}
+
 bool pins_can_dac(const struct pin_def* p){
     return p != NULL && (p->caps & CAP_DAC) != 0;
 }

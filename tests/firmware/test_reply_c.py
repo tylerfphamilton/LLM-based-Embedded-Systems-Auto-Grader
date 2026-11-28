@@ -20,6 +20,7 @@ import pytest
 from grader.pinmap import Capability, pinmap_hash
 from grader.protocol import (
     PROTOCOL_VERSION,
+    Adc,
     Dac,
     Err,
     Ok,
@@ -35,7 +36,7 @@ FW = ROOT / "firmware" / "src"
 LINE_MAX = 1024
 
 # harness rows "<kind>\t<pin>\t<reply>": one command run on every pin of the table
-PER_PIN_CASES = ("freqpin", "tracepin", "drivepin", "delayfrom", "delayto", "dacpin")
+PER_PIN_CASES = ("freqpin", "tracepin", "drivepin", "delayfrom", "delayto", "dacpin", "adcpin")
 
 COMPILER = next((c for c in ("cc", "gcc", "clang") if shutil.which(c)), None)
 pytestmark = pytest.mark.skipif(
@@ -753,7 +754,7 @@ def test_measurement_errors_arrive_at_collect(arm_cases) -> None:
 
 
 def test_arm_errors_take_no_slot(arm_cases) -> None:
-    only = "only measurements can be armed (FREQ, TRACE, DELAY, UART READ), not"
+    only = "only measurements can be armed (FREQ, TRACE, DELAY, UART READ, ADC), not"
     errors = {
         "arm_none": "ERR BADCMD ARM takes 1-15 arguments, got 0",
         "arm_drive": format_response(Err("BADCMD", f"{only} DRIVE")),
@@ -818,7 +819,7 @@ def test_dac_rejects_bad_arguments_without_output(dac_cases) -> None:
         assert dac_cases[case] == bad, case
         assert dac_cases[f"{case}_call"] == "-", case
     assert dac_cases["dac_args"] == "ERR BADCMD DAC takes 2 arguments, got 1"
-    only = "only measurements can be armed (FREQ, TRACE, DELAY, UART READ), not DAC"
+    only = "only measurements can be armed (FREQ, TRACE, DELAY, UART READ, ADC), not DAC"
     assert dac_cases["dac_arm"] == format_response(Err("BADCMD", only))
 
 
@@ -836,3 +837,81 @@ def test_dac_runs_while_a_measurement_is_armed(arm_cases) -> None:
     assert arm_cases["arm_freq_dac"] == ok(slot=0)
     assert arm_cases["arm_dac"] == ok()
     assert arm_cases["collect_freq_dac"] == arm_cases["freq_1k"]
+
+
+# --------------------------------------------------------------------------- ADC
+
+
+def test_adc_checks_every_pin_against_the_pin_map(output, pinmap) -> None:
+    """ADC runs only on wired pins with the analog_in capability."""
+    for name, info in pinmap.pins.items():
+        line = output[0][f"adcpin:{name}"]
+        if "analog_in" not in info.caps:
+            want = format_response(Err("BADPIN", f"pin {name} has no analog_in capability"))
+        elif not _wired(info.stm32):
+            want = format_response(Err("BADPIN", f"pin {name} is not wired (TBD in the pin map)"))
+        else:
+            want = ok(mean_mv=1650.4, min_mv=1650, max_mv=1650, vdda_mv=3300)
+        assert line == want, name
+    unknown = Err("BADPIN", "pin D99 is not in the pin map")
+    assert output[0]["adc_unknown"] == format_response(unknown)
+
+
+@pytest.fixture
+def adc_cases(output, pinmap) -> dict[str, str]:
+    cases = output[0]
+    if "adc_pin" not in cases:
+        pytest.skip("no wired analog_in pin in config/pinmap.yaml")
+    m = _wired(pinmap.pins[cases["adc_pin"]].stm32)
+    assert m
+    cases = dict(cases)
+    cases["_stm32"] = f"{m.group(1)} {int(m.group(2))}"
+    return cases
+
+
+def test_adc_samples_the_mapped_stm32_pin(adc_cases) -> None:
+    pin = adc_cases["adc_pin"]
+    assert Adc(pin, 1000).to_line() == f"ADC {pin} 1000"  # what the host sends
+    assert adc_cases["adc_steady_call"] == f"{adc_cases['_stm32']} 1000"
+
+
+def test_adc_converts_counts_to_millivolts(adc_cases) -> None:
+    # 2048 counts of 4095 at VDDA 3300 mV = 1650.4 mV
+    assert adc_cases["adc_steady"] == ok(mean_mv=1650.4, min_mv=1650, max_mv=1650, vdda_mv=3300)
+    # a 25 % PWM sampled at random phases: mean = duty x VDDA, min/max = the rails
+    assert adc_cases["adc_pwm"] == ok(mean_mv=828.0, min_mv=0, max_mv=3312, vdda_mv=3312)
+    assert adc_cases["adc_tiny"] == ok(mean_mv=1.3, min_mv=1, max_mv=2, vdda_mv=3300)
+    full = ok(mean_mv=3600.0, min_mv=3600, max_mv=3600, vdda_mv=3600)
+    assert adc_cases["adc_full"] == full
+
+
+def test_adc_rig_problems_are_errors(adc_cases) -> None:
+    overrun = "ADC overrun: samples came faster than the board read them"
+    assert adc_cases["adc_overrun"] == format_response(Err("INTERNAL", overrun))
+    failed = format_response(Err("INTERNAL", "ADC sampling failed"))
+    assert adc_cases["adc_stalled"] == failed
+    assert adc_cases["adc_novdda"] == failed
+    pin = adc_cases["adc_pin"]
+    port, num = adc_cases["_stm32"].split()
+    nochan = Err("BADPIN", f"no ADC channel on P{port}{num} (pin {pin})")
+    assert adc_cases["adc_nochannel"] == format_response(nochan)
+    assert adc_cases["adc_hw"] == format_response(Err("INTERNAL", "ADC setup failed"))
+
+
+def test_adc_rejects_bad_arguments_without_sampling(adc_cases) -> None:
+    bad = format_response(Err("BADARG", "samples must be 1-10000"))
+    for case in ("adc_s0", "adc_sbig", "adc_sneg", "adc_sfrac"):
+        assert adc_cases[case] == bad, case
+        assert adc_cases[f"{case}_call"] == "-", case
+    assert adc_cases["adc_args"] == "ERR BADCMD ADC takes 2 arguments, got 1"
+
+
+def test_adc_can_be_armed_around_a_dac_change(arm_cases) -> None:
+    """DAC -> ADC loopback: the ADC is sampling before the DAC changes and finishes at COLLECT."""
+    if "arm_adc" not in arm_cases:
+        pytest.skip("no wired pin with both dac and analog_in in config/pinmap.yaml")
+    assert arm_cases["arm_adc"] == ok(slot=0)
+    assert arm_cases["arm_adc_dac"] == ok()
+    want = ok(mean_mv=1650.4, min_mv=1650, max_mv=1650, vdda_mv=3300)
+    assert arm_cases["collect_adc"] == want
+    assert arm_cases["arm_adc_events"] == "adc_start dac adc_finish"

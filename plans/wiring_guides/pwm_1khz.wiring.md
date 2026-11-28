@@ -3,7 +3,7 @@
 Generate a 1 kHz PWM signal with 25% duty cycle on pin D5.
 
 Plan: `pwm_1khz.json`  
-Pin map: `config/pinmap.yaml` (hash `61d72c32`)
+Pin map: `config/pinmap.yaml` (hash `a62650fe`)
 
 | # | Nano 33 BLE pin | Nucleo pin (header) | STM32 | Resistor | Direction | Used for |
 |---|---|---|---|---|---|---|
@@ -19,7 +19,7 @@ Pin map: `config/pinmap.yaml` (hash `61d72c32`)
 4. Put each listed resistor in series, in the wire itself (not to ground). It limits the current if both boards drive the line at once.
 5. Leave every other Nano pin unconnected. Don't also connect a real button, LED or sensor to a listed pin.
 6. Plug both boards into the laptop: the Nano by its own USB, the Nucleo by its ST-LINK USB.
-7. Run `python scripts/rig_check.py`. It should report a matching pin map (`pinmap=61d72c32`). This checks the firmware, **not** the wires.
+7. Run `python scripts/rig_check.py`. It should report a matching pin map (`pinmap=a62650fe`). This checks the firmware, **not** the wires.
 
 ---
 

@@ -35,6 +35,9 @@ bool pins_is_gpio(const struct pin_def* p);
 // true if the pin map gives the pin the drive capability (the STM32 may drive it)
 bool pins_can_drive(const struct pin_def* p);
 
+// true if the pin map gives the pin the analog_in capability (the STM32 samples its voltage)
+bool pins_can_analog_in(const struct pin_def* p);
+
 // true if the pin map gives the pin the dac capability (the STM32 outputs an analog voltage)
 bool pins_can_dac(const struct pin_def* p);
 

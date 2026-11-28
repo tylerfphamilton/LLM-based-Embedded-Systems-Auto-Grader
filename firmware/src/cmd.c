@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "adc_in.h"
 #include "capture.h"
 #include "dac_out.h"
 #include "delay.h"
@@ -39,6 +40,7 @@ enum meas_kind {
     M_TRACE,
     M_DELAY,
     M_UART,         // UART READ
+    M_ADC,
     M_KINDS,
 };
 
@@ -66,8 +68,7 @@ struct meas {
 static struct meas slots[ARM_SLOTS];
 static bool slot_used[ARM_SLOTS];
 
-static const char* const kind_names[M_KINDS] = {"FREQ", "TRACE", "DELAY", "UART READ"};
-
+static const char* const kind_names[M_KINDS] = {"FREQ", "TRACE", "DELAY", "UART READ", "ADC"};
 
 // ---------------------- handlers -----------------------------
 
@@ -526,6 +527,71 @@ static bool pin_usable(const struct pin_def* p, const char* name, bool has_cap,
     return true;
 }
 
+// ADC <pin> <samples>: sample the voltage on <pin> (a pin with the analog_in capability)
+// `samples` times (1-10000), one every 20 us.
+//   mean_mv = average of the samples, mV with 1 decimal (a PWM output averages to
+//             duty x VDDA when the window spans many periods)
+//   min_mv / max_mv = lowest / highest sample, mV
+//   vdda_mv = the ADC's full scale, measured from VREFINT (for diagnosis)
+static bool adc_start_cmd(const struct args *a, struct meas *m, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    const char* name = a->argv[1];
+    const struct pin_def* p = pins_find(name);
+    uint32_t samples;
+
+    if (!pin_usable(p, name, pins_can_analog_in(p), "analog_in", reply)){
+        return false;
+    }
+    if (!parse_u32(a->argv[2], ADC_IN_MAX_SAMPLES, &samples) || samples < 1){
+        reply_err(reply, "BADARG", "samples must be 1-10000");
+        return false;
+    }
+
+    m->kind = M_ADC;
+    m->pins[0] = p;
+    if (!hardware_free(m, reply)){
+        return false;
+    }
+    int rc = adc_in_start(p->port, p->pin, samples);
+    if (rc == ADC_IN_NO_CHANNEL){
+        snprintf(msg, sizeof(msg), "no ADC channel on P%c%u (pin %.16s)", p->port, (unsigned)p->pin, name);
+        reply_err(reply, "BADPIN", msg);
+        return false;
+    }
+    if (rc != ADC_IN_OK){
+        reply_err(reply, "INTERNAL", "ADC setup failed");
+        return false;
+    }
+    return true;
+}
+
+static void adc_finish_cmd(struct meas *m, reply_fn reply){
+
+    struct adc_in_raw raw;
+    struct reply_buf r;
+    (void) m;
+
+    if (adc_in_finish(&raw) != ADC_IN_OK || raw.count == 0 || raw.vdda_mv == 0){
+        reply_err(reply, "INTERNAL", "ADC sampling failed");
+        return;
+    }
+    // a lost sample would bias the mean: that's a rig fault, not a student fault
+    if (raw.overruns != 0){
+        reply_err(reply, "INTERNAL", "ADC overrun: samples came faster than the board read them");
+        return;
+    }
+
+    // counts -> mV: count * VDDA / 4095 (12 bits)
+    uint64_t mean_x10 = div_round((uint64_t)raw.sum * raw.vdda_mv * 10u, 4095u * (uint64_t)raw.count);
+    reply_begin(&r);
+    reply_fixed(&r, "mean_mv", (int64_t)mean_x10, 1);
+    reply_int(&r, "min_mv", (int64_t)div_round((uint64_t)raw.min * raw.vdda_mv, 4095u));
+    reply_int(&r, "max_mv", (int64_t)div_round((uint64_t)raw.max * raw.vdda_mv, 4095u));
+    reply_int(&r, "vdda_mv", raw.vdda_mv);
+    reply_send(&r, reply);
+}
+
 // DAC <pin> <mv>: output mv (0-3300) on <pin> (a pin with the dac capability) and keep
 // it there, like a potentiometer or an analog sensor on the student's analog input.
 // Replies OK once the output has settled. A stimulus, so it may run while measurements
@@ -880,6 +946,7 @@ static const struct meas_ops ops[M_KINDS] = {
     [M_TRACE] = {trace_start_cmd, trace_finish_cmd, trace_cancel},
     [M_DELAY] = {delay_start_cmd, delay_finish_cmd, delay_cancel},
     [M_UART] = {uart_read_start, uart_read_finish, su_read_cancel},
+    [M_ADC] = {adc_start_cmd, adc_finish_cmd, adc_in_cancel},
 };
 
 // a plain (blocking) measurement request
@@ -902,6 +969,11 @@ static void cmd_trace(const struct args *a, reply_fn reply){
 static void cmd_delay(const struct args *a, reply_fn reply){
     run_now(M_DELAY, a, reply);
 }
+
+static void cmd_adc(const struct args *a, reply_fn reply){
+    run_now(M_ADC, a, reply);
+}
+
 
 // UART <baud> SEND <hex>  |  UART <baud> READ <window_ms>
 static void cmd_uart(const struct args *a, reply_fn reply){
@@ -956,7 +1028,7 @@ static void cmd_arm(const struct args *a, reply_fn reply){
         return;
     }
     if (c->meas == M_NONE){
-        snprintf(msg, sizeof(msg), "only measurements can be armed (FREQ, TRACE, DELAY, UART READ), not %.16s", c->verb);
+        snprintf(msg, sizeof(msg), "only measurements can be armed (FREQ, TRACE, DELAY, UART READ, ADC), not %.16s", c->verb);
         reply_err(reply, "BADCMD", msg);
         return;
     }
@@ -1012,6 +1084,7 @@ static const struct command commands[] = {
     {"DELAY", 5, 5, cmd_delay, M_DELAY},
     {"UART", 3, 3, cmd_uart, M_UART},
     {"DAC", 2, 2, cmd_dac, M_NONE},
+    {"ADC", 2, 2, cmd_adc, M_ADC},
     {"ARM", 1, MAX_ARGS - 1, cmd_arm, M_NONE},
     {"COLLECT", 1, 1, cmd_collect, M_NONE},
 };

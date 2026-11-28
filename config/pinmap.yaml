@@ -8,8 +8,8 @@
 #
 # !!! Every stm32 value is a PLACEHOLDER until verified in STM32CubeMX against the wiring. !!!
 pins:
-  D5:  { stm32: PA0,  caps: [gpio, timer_capture], header: A0,
-         note: "TIM2_CH1 input capture (FREQ)" }
+  D5:  { stm32: PA0,  caps: [gpio, timer_capture, analog_in], header: A0,
+         note: "TIM2_CH1 input capture (FREQ); ADC12_IN5 (ADC of a PWM average)" }
   D2:  { stm32: PA8,  caps: [gpio, drive], header: D7, series_ohms: 1000,
          note: "STM32 drives the student's button input" }
   D13: { stm32: PB3,  caps: [gpio, timer_capture], header: D3,

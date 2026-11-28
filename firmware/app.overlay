@@ -37,6 +37,15 @@
 };
 
 /*
+ * ADC1 samples the student's analog pins and TIM6 triggers its conversions at 50 kHz.
+ * src/adc_in.c drives both directly with STM32 LL; turn off Zephyr's ADC driver (the
+ * board file enables it on PC0) so it doesn't claim the ADC or its interrupt.
+ */
+&adc1 {
+    status = "disabled";
+};
+
+/*
  * System clock from the 32.768 kHz crystal instead of the internal RC oscillator.
  *
  * The board default runs the PLL from HSI16, an RC oscillator that can be off by ~1%,

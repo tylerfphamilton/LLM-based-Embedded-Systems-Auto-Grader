@@ -9,7 +9,7 @@
 #include "pins.h"
 
 /* First 8 hex chars of SHA-256 of the canonical pin map (host: pinmap_hash). */
-#define PINMAP_HASH "61d72c32"
+#define PINMAP_HASH "a62650fe"
 
 #define CAP_GPIO          (1u << 0)
 #define CAP_DRIVE         (1u << 1)
@@ -31,7 +31,7 @@ static const struct pin_def PINS[] = {
     { "D1", 'A', 10, CAP_UART_RX },
     { "D13", 'B', 3, CAP_GPIO | CAP_TIMER_CAPTURE },
     { "D2", 'A', 8, CAP_GPIO | CAP_DRIVE },
-    { "D5", 'A', 0, CAP_GPIO | CAP_TIMER_CAPTURE },
+    { "D5", 'A', 0, CAP_GPIO | CAP_TIMER_CAPTURE | CAP_ANALOG_IN },
     { "RST", 'A', 1, CAP_RESET },
 };
 
