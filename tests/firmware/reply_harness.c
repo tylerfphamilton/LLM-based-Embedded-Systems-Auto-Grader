@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "adc_in.h"
 #include "capture.h"
 #include "cmd.h"
 #include "dac_out.h"
@@ -29,6 +30,40 @@ static char events[512];
 static void event(const char *e) {
     size_t n = strlen(events);
     snprintf(events + n, sizeof(events) - n, "%s%s", n ? " " : "", e);
+}
+
+/* adc_in.c is Zephyr + ADC hardware; this stand-in records the call ("-" if none was made)
+   and returns a canned result. */
+static struct adc_in_raw stub_adc;
+static int stub_adc_rc;
+static char stub_adc_call[64];
+
+int adc_in_start(char port, uint8_t pin, uint32_t samples) {
+    snprintf(stub_adc_call, sizeof(stub_adc_call), "%c %u %u", port, pin, (unsigned)samples);
+    event("adc_start");
+    /* set-up problems show at the start; a stalled run (count short) at the finish */
+    return stub_adc_rc;
+}
+
+int adc_in_finish(struct adc_in_raw *out) {
+    event("adc_finish");
+    *out = stub_adc;
+    return stub_adc.count != 0 ? ADC_IN_OK : ADC_IN_HW;
+}
+
+void adc_in_cancel(void) {
+    event("adc_cancel");
+}
+
+/* n samples summing to `sum` counts, between lo and hi, with VDDA = vdda mV */
+static void stub_adc_result(uint32_t n, uint32_t sum, uint16_t lo, uint16_t hi, uint32_t vdda) {
+    stub_adc_rc = ADC_IN_OK;
+    stub_adc.count = n;
+    stub_adc.sum = sum;
+    stub_adc.min = lo;
+    stub_adc.max = hi;
+    stub_adc.vdda_mv = vdda;
+    stub_adc.overruns = 0;
 }
 
 /* dac_out.c is Zephyr + DAC hardware; this stand-in records the call ("-" if none was made). */
@@ -721,6 +756,70 @@ int main(void) {
     }
     freq("dac_unknown", "DAC D99 1650");
 
+
+    /* ADC 1000 on every pin of the table: a steady 2048 counts at VDDA 3300 */
+    for (size_t i = 0; i < PINS_COUNT; i++) {
+        char line[64], tag[80];
+        stub_adc_result(1000, 2048000u, 2048, 2048, 3300);
+        snprintf(line, sizeof(line), "ADC %s 1000", PINS[i].name);
+        snprintf(tag, sizeof(tag), "adcpin\t%s", PINS[i].name);
+        current = tag;
+        cmd_handle(line, out);
+    }
+
+    /* ADC details, on the first wired analog_in pin (if the map has one). Each case prints
+       the reply, then the call the firmware made ("-" = none) */
+    for (size_t i = 0; i < PINS_COUNT; i++) {
+        char req[64];
+        if (PINS[i].port == 0 || !(PINS[i].caps & CAP_ANALOG_IN)) {
+            continue;
+        }
+        current = "adc_pin";
+        out(PINS[i].name);
+        snprintf(req, sizeof(req), "ADC %s 1000", PINS[i].name);
+
+        stub_adc_result(1000, 2048000u, 2048, 2048, 3300); /* steady half scale */
+        strcpy(stub_adc_call, "-");
+        freq("adc_steady", req);
+        printf("adc_steady_call\t%s\n", stub_adc_call);
+        stub_adc_result(1000, 250 * 4095u, 0, 4095, 3312); /* 25 % PWM: 250 of 1000 high */
+        freq("adc_pwm", req);
+        stub_adc_result(3, 1 + 2 + 2, 1, 2, 3300); /* tiny values round to 0.1 mV */
+        freq("adc_tiny", req);
+        stub_adc_result(10000, 10000u * 4095u, 4095, 4095, 3600); /* full scale, max count */
+        snprintf(req, sizeof(req), "ADC %s 10000", PINS[i].name);
+        freq("adc_full", req);
+
+        snprintf(req, sizeof(req), "ADC %s 1000", PINS[i].name);
+        stub_adc_result(1000, 2048000u, 2048, 2048, 3300);
+        stub_adc.overruns = 2;
+        freq("adc_overrun", req);
+        stub_adc_result(0, 0, 0, 0, 3300); /* the run stalled: no samples */
+        freq("adc_stalled", req);
+        stub_adc_result(1000, 2048000u, 2048, 2048, 0); /* VDDA unknown */
+        freq("adc_novdda", req);
+        stub_adc_result(1000, 2048000u, 2048, 2048, 3300);
+        stub_adc_rc = ADC_IN_NO_CHANNEL;
+        freq("adc_nochannel", req);
+        stub_adc_rc = ADC_IN_HW;
+        freq("adc_hw", req);
+
+        static const char *const bad[][2] = {
+            {"adc_s0", "0"}, {"adc_sbig", "10001"}, {"adc_sneg", "-5"}, {"adc_sfrac", "1e3"},
+        };
+        stub_adc_result(1000, 2048000u, 2048, 2048, 3300);
+        for (size_t k = 0; k < sizeof(bad) / sizeof(bad[0]); k++) {
+            snprintf(req, sizeof(req), "ADC %s %s", PINS[i].name, bad[k][1]);
+            strcpy(stub_adc_call, "-");
+            freq(bad[k][0], req);
+            printf("%s_call\t%s\n", bad[k][0], stub_adc_call);
+        }
+        snprintf(req, sizeof(req), "ADC %s", PINS[i].name);
+        freq("adc_args", req);
+        break;
+    }
+    freq("adc_unknown", "ADC D99 1000");
+
     
     /* UART READ */
     {
@@ -850,6 +949,24 @@ int main(void) {
             freq("collect_uart", "COLLECT 1");
             printf("arm_button_events\t%s\n", events);
             printf("arm_button_delay_call\t%s\n", stub_delay_call);
+
+            /* DAC -> ADC loopback on the same pin: ARM ADC, set the DAC, COLLECT */
+            for (size_t i = 0; i < PINS_COUNT; i++) {
+                if (PINS[i].port == 0 || !(PINS[i].caps & CAP_DAC) ||
+                    !(PINS[i].caps & CAP_ANALOG_IN)) {
+                    continue;
+                }
+                events[0] = '\0';
+                stub_adc_result(1000, 2048000u, 2048, 2048, 3300);
+                stub_dac_rc = DAC_OUT_OK;
+                snprintf(req, sizeof(req), "ARM ADC %s 1000", PINS[i].name);
+                freq("arm_adc", req);
+                snprintf(req, sizeof(req), "DAC %s 1650", PINS[i].name);
+                freq("arm_adc_dac", req);
+                freq("collect_adc", "COLLECT 0");
+                printf("arm_adc_events\t%s\n", events);
+                break;
+            }
 
             
             /* DAC is a stimulus: it runs while a measurement is armed */

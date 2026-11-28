@@ -6,9 +6,12 @@
 // reaches about 0.2 V from either rail (STM32L476 datasheet: 0.2 V to VDDA - 0.2 V).
 // No trigger is set, so each new value reaches the pin one bus clock after it is written.
 //
-// The value is mv * 4095 / 3300: it assumes VDDA is exactly 3.3 V (the Nucleo regulator).
+// The value is mv * 4095 / VDDA, with VDDA (the DAC's full scale, ~3.31 V on the Nucleo)
+// measured by the ADC from the internal reference on every call, so the output is in real
+// millivolts. If the ADC can't measure it, the DAC assumes 3300 mV.
 
 #include "dac_out.h"
+#include "adc_in.h"
 
 #include <stdbool.h>
 #include <zephyr/device.h>
@@ -61,10 +64,12 @@ int dac_out_set(char port, uint8_t pin, uint32_t mv){
         clock_on = true;
     }
 
-    if (mv > DAC_OUT_MAX_MV){
-        mv = DAC_OUT_MAX_MV;
+    uint32_t vdda = adc_in_vdda_mv();
+    if (vdda == 0){
+        vdda = DAC_OUT_MAX_MV;
     }
-    uint32_t code = (mv * 4095u + DAC_OUT_MAX_MV / 2) / DAC_OUT_MAX_MV;   // rounded
+    // rounded; asking for more than VDDA gives full scale
+    uint32_t code = mv >= vdda ? 4095u : (mv * 4095u + vdda / 2) / vdda;
 
     if (!enabled[i]){
         // first use: the pin becomes an analog pin (no digital input or output stage), the

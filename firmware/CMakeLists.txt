@@ -22,4 +22,6 @@ target_sources(app PRIVATE
     src/delay.c
     src/student_uart.c
     src/dac_out.c
+    src/adc_in.c
+    
 )

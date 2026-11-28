@@ -77,10 +77,11 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   through a 1 kΩ series resistor). Outputs the voltage and holds it until the next `DAC`
   (also across `RESET`, like `DRIVE`); replies `OK` once it has settled (~20 µs). It is a
   stimulus, so it runs while measurements are armed. The output is buffered (it drives
-  the student's input with no load error) and the value is `mv × 4095 / 3300`, assuming
-  VDDA is exactly 3.3 V. The buffer only reaches about 0.2 V from either rail, so 0–200
-  and 3100–3300 mV come out closer to the middle than asked: plans should use
-  200–3100 mV.
+  the student's input with no load error) and the value is `mv × 4095 / VDDA`, with
+  VDDA (~3.31 V on the Nucleo) measured by the ADC from the internal reference on each
+  `DAC`, so the output is in real millivolts (loopback through `ADC A0`: within ~3 mV).
+  The buffer only reaches about 0.2 V from either rail, so 0–200 and 3100–3300 mV come 
+  out closer to the middle than asked: plans should use 200–3100 mV.
 
 ### Measurement semantics
 
@@ -131,8 +132,18 @@ them to its own pins using a compiled-in copy of `config/pinmap.yaml`.
   `byte_count` is still the full count. The rx pin has the internal pull-up, so an
   undriven line reads as an idle UART. Bytes lost because the board read too slowly give
   `ERR INTERNAL uart overrun …` (a rig fault).
-* `ARM` / `COLLECT`: `ARM <request>` takes a measurement request (`FREQ`, `TRACE`, `DELAY`
-  or `UART … READ`), checks it exactly as the plain request would (same `ERR` replies),
+* `ADC <pin> <samples>` (1–10000): only pins with the `analog_in` capability (A0 → PA4,
+  D5 → PA0). Takes `samples` samples, one every **20 µs** (50 kHz, timer-triggered), so the
+  reply comes `samples × 0.02` ms after the request. `mean_mv` (1 decimal) is their
+  average, `min_mv`/`max_mv` the extremes (integers). A steady level gives min ≈ mean ≈
+  max; a PWM output gives min ≈ 0, max ≈ VDDA and mean ≈ duty × VDDA, if the window spans
+  many periods (1000 samples = 20 ms = 20 periods at 1 kHz). Counts are converted with
+  the real VDDA, measured from the STM32's factory-calibrated internal reference before
+  each run and reported as `vdda_mv` (extra field, for diagnosis). 12 bits, so one count
+  is ~0.8 mV. A0 is also the DAC pin: `ARM ADC A0 …` + `DAC A0 …` reads the DAC back
+  (a rig self-test). A lost sample gives `ERR INTERNAL ADC overrun …` (a rig fault).
+* `ARM` / `COLLECT`: `ARM <request>` takes a measurement request (`FREQ`, `TRACE`, `DELAY`, 
+  `UART … READ` or `ADC`), checks it exactly as the plain request would (same `ERR` replies),
   starts it and replies `OK slot=<n>` at once; its window or timeout starts then.
   `COLLECT <n>` blocks until it is done and replies with the plain request's reply,
   including its errors (e.g. `ERR TIMEOUT` for a DELAY that never triggered). Up to 4
