@@ -13,6 +13,7 @@
 
 #include "capture.h"
 #include "cmd.h"
+#include "dac_out.h"
 #include "drive.h"
 #include "delay.h"
 #include "pins_gen.h"
@@ -28,6 +29,16 @@ static char events[512];
 static void event(const char *e) {
     size_t n = strlen(events);
     snprintf(events + n, sizeof(events) - n, "%s%s", n ? " " : "", e);
+}
+
+/* dac_out.c is Zephyr + DAC hardware; this stand-in records the call ("-" if none was made). */
+static char stub_dac_call[64];
+static int stub_dac_rc;
+
+int dac_out_set(char port, uint8_t pin, uint32_t mv) {
+    snprintf(stub_dac_call, sizeof(stub_dac_call), "%c %u %u", port, pin, (unsigned)mv);
+    event("dac");
+    return stub_dac_rc;
 }
 
 /* student_uart.c is Zephyr + USART hardware; these stand-ins record the call ("-" if none
@@ -663,6 +674,53 @@ int main(void) {
     }
     freq("delay_unknown_from", "DELAY D99 FALLING D13 ANY 100");
 
+
+    /* DAC 1650 on every pin of the table */
+    for (size_t i = 0; i < PINS_COUNT; i++) {
+        char line[64], tag[80];
+        stub_dac_rc = DAC_OUT_OK;
+        snprintf(line, sizeof(line), "DAC %s 1650", PINS[i].name);
+        snprintf(tag, sizeof(tag), "dacpin\t%s", PINS[i].name);
+        current = tag;
+        cmd_handle(line, out);
+    }
+
+    /* DAC details, on the first wired dac pin (if the map has one). Each case prints the
+       reply, then the call the firmware made ("-" = none) */
+    for (size_t i = 0; i < PINS_COUNT; i++) {
+        static const struct {
+            const char *name, *mv;
+            int rc;
+        } cases[] = {
+            {"dac_mid", "1650", DAC_OUT_OK},     {"dac_zero", "0", DAC_OUT_OK},
+            {"dac_max", "3300", DAC_OUT_OK},     {"dac_big", "3301", DAC_OUT_OK},
+            {"dac_neg", "-1", DAC_OUT_OK},       {"dac_frac", "1.5", DAC_OUT_OK},
+            {"dac_volts", "1.65V", DAC_OUT_OK},  {"dac_nochannel", "1650", DAC_OUT_NO_CHANNEL},
+            {"dac_hw", "1650", DAC_OUT_HW},
+        };
+        if (PINS[i].port == 0 || !(PINS[i].caps & CAP_DAC)) {
+            continue;
+        }
+        current = "dac_pin";
+        out(PINS[i].name);
+        for (size_t k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+            char req[64];
+            snprintf(req, sizeof(req), "DAC %s %s", PINS[i].name, cases[k].mv);
+            stub_dac_rc = cases[k].rc;
+            strcpy(stub_dac_call, "-");
+            freq(cases[k].name, req);
+            printf("%s_call\t%s\n", cases[k].name, stub_dac_call);
+        }
+        stub_dac_rc = DAC_OUT_OK;
+        char req[64];
+        snprintf(req, sizeof(req), "ARM DAC %s 1650", PINS[i].name);
+        freq("dac_arm", req);
+        snprintf(req, sizeof(req), "DAC %s", PINS[i].name);
+        freq("dac_args", req);
+        break;
+    }
+    freq("dac_unknown", "DAC D99 1650");
+
     
     /* UART READ */
     {
@@ -792,6 +850,22 @@ int main(void) {
             freq("collect_uart", "COLLECT 1");
             printf("arm_button_events\t%s\n", events);
             printf("arm_button_delay_call\t%s\n", stub_delay_call);
+
+            
+            /* DAC is a stimulus: it runs while a measurement is armed */
+            for (size_t i = 0; i < PINS_COUNT; i++) {
+                if (PINS[i].port == 0 || !(PINS[i].caps & CAP_DAC)) {
+                    continue;
+                }
+                stub_signal(80000000u, 100, 80000, 20000);
+                stub_dac_rc = DAC_OUT_OK;
+                snprintf(req, sizeof(req), "ARM FREQ %s 100", cap1);
+                freq("arm_freq_dac", req);
+                snprintf(req, sizeof(req), "DAC %s 1650", PINS[i].name);
+                freq("arm_dac", req);
+                freq("collect_freq_dac", "COLLECT 0");
+                break;
+            }
 
             /* a collected slot is free again */
             stub_signal(80000000u, 100, 80000, 20000);

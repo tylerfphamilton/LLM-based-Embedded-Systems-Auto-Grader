@@ -18,7 +18,8 @@ pins:
          note: "Nano Serial1 TX -> STM32 USART1 RX" }
   D0:  { stm32: PA9,  caps: [uart_tx], header: D8, series_ohms: 1000,
          note: "Nano Serial1 RX <- STM32 USART1 TX" }
-  A0:  { stm32: TBD,  caps: [analog_in, dac] }        # placeholder; L476 DAC1_OUT1 is PA4
+  A0:  { stm32: PA4,  caps: [analog_in, dac], header: A2, series_ohms: 1000,
+         note: "Nano analog input <- STM32 DAC1_OUT1 (DAC); PA4 is also ADC12_IN9" }
   A4:  { stm32: TBD,  caps: [i2c_sda],                # placeholder
          note: "STM32 acts as I2C target" }
   A5:  { stm32: TBD,  caps: [i2c_scl] }               # placeholder

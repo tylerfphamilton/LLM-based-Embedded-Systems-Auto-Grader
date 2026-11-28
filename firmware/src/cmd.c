@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "capture.h"
+#include "dac_out.h"
 #include "delay.h"
 #include "drive.h"
 #include "pins.h"
@@ -525,6 +526,40 @@ static bool pin_usable(const struct pin_def* p, const char* name, bool has_cap,
     return true;
 }
 
+// DAC <pin> <mv>: output mv (0-3300) on <pin> (a pin with the dac capability) and keep
+// it there, like a potentiometer or an analog sensor on the student's analog input.
+// Replies OK once the output has settled. A stimulus, so it may run while measurements
+// are armed.
+static void cmd_dac(const struct args *a, reply_fn reply){
+
+    char msg[REPLY_MAX];
+    const char* name = a->argv[1];
+    const struct pin_def* p = pins_find(name);
+    uint32_t mv;
+    struct reply_buf r;
+
+    if (!pin_usable(p, name, pins_can_dac(p), "dac", reply)){
+        return;
+    }
+    if (!parse_u32(a->argv[2], DAC_OUT_MAX_MV, &mv)){
+        reply_err(reply, "BADARG", "mv must be 0-3300");
+        return;
+    }
+
+    int rc = dac_out_set(p->port, p->pin, mv);
+    if (rc == DAC_OUT_NO_CHANNEL){
+        snprintf(msg, sizeof(msg), "no DAC output on P%c%u (pin %.16s)", p->port, (unsigned)p->pin, name);
+        reply_err(reply, "BADPIN", msg);
+        return;
+    }
+    if (rc != DAC_OUT_OK){
+        reply_err(reply, "INTERNAL", "DAC setup failed");
+        return;
+    }
+    reply_begin(&r);
+    reply_send(&r, reply);
+}
+
 // DELAY <from_pin> <from_edge> <to_pin> <to_edge> <timeout_ms>   (edges: RISING|FALLING|ANY)
 //   delay_ms      = time from the first from_edge on from_pin (the trigger) to the first
 //                   to_edge on to_pin after it, in ms (us resolution); null if none came
@@ -976,6 +1011,7 @@ static const struct command commands[] = {
     {"DRIVE", 2, 5, cmd_drive, M_NONE},
     {"DELAY", 5, 5, cmd_delay, M_DELAY},
     {"UART", 3, 3, cmd_uart, M_UART},
+    {"DAC", 2, 2, cmd_dac, M_NONE},
     {"ARM", 1, MAX_ARGS - 1, cmd_arm, M_NONE},
     {"COLLECT", 1, 1, cmd_collect, M_NONE},
 };

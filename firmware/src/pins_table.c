@@ -35,6 +35,10 @@ bool pins_can_drive(const struct pin_def* p){
     return p != NULL && (p->caps & CAP_DRIVE) != 0;
 }
 
+bool pins_can_dac(const struct pin_def* p){
+    return p != NULL && (p->caps & CAP_DAC) != 0;
+}
+
 const struct pin_def* pins_reset_line(void){
 
     for (size_t i = 0; i < PINS_COUNT; i++){
